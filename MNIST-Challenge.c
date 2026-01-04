@@ -65,6 +65,9 @@ float softmax (float *in, float *out, int n){
 }
 
 int main (void){
+    //define variables
+    int answer = 0;
+
     //define pointer
     float *input_layer;
     float *first_hidden_layer;
@@ -92,11 +95,11 @@ int main (void){
     //error
     if (!input_layer || !first_hidden_layer || !second_hidden_layer || !output_layer || !weight_to_first_hidden_layer || !bias_of_first_hidden_layer || !weight_to_second_hidden_layer || !bias_of_second_hidden_layer || !weight_to_output_layer || !bias_of_output_layer)
     {
-        printf("Failed to mamory allocation.\n");
+        printf("Failed to allocate memory.\n");
         return EXIT_FAILURE;
     }
 
-    //file inport
+    //file
     FILE *learning_data_images, *learning_data_labels;
 
     //weight initialize
@@ -152,6 +155,9 @@ int main (void){
     {
         input_layer[i] = (float)(fgetc(learning_data_images))/256;
     }
+
+    //inputting label
+    answer = fgetc(learning_data_labels);
 
     //end
     free(input_layer);
