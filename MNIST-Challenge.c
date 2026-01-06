@@ -2,12 +2,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <time.h>
 
 #define PI 3.14159265358979
 #define n_of_input_layer 784
 #define n_of_first_hidden_layer 512
 #define n_of_second_hidden_layer 256
 #define n_of_output_layer 10
+
+void add_bias (float *operated_arr, float *input_bias, int n_of_arr){
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        operated_arr[i] = operated_arr[i] + input_bias[i];
+    }
+    
+}
 
 int mmul (float *output_arr, float *input_arr, float *matrix, int n_of_output_arr, int n_of_input_arr){
     for (int i = 0; i < n_of_output_arr; i++)
@@ -41,32 +50,33 @@ float extract_max (float *input_array, int n_of_input_arr){
     return max;
 }
 
-float gelu (float in){
-    float out = 0.0;
-    out = 0.5 * in * (1 + tanh(sqrt(2/PI) * (in + 0.044715 * pow(in, 3))));
-    return out;
+void gelu (float *input_arr, float *output_arr, int n_of_arr){
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        output_arr[i] = 0.5 * input_arr[i] * (1 + tanh(sqrt(2/PI) * (input_arr[i] + 0.044715 * pow(input_arr[i], 3))));
+    }
 }
 
-float softmax (float *in, float *out, int n){
+void softmax (float *input_arr, float *output_arr, int n_of_arr){
     float max = 0.0, sum = 0.0;
-    max = extract_max(in, n);
-    for (int i = 0; i < n; i++)
+    max = extract_max(input_arr, n_of_arr);
+    for (int i = 0; i < n_of_arr; i++)
     {
-        out[i] = exp(in[i] - max);
-        sum += out[i];
+        input_arr[i] = exp(input_arr[i] - max);
+        sum += input_arr[i];
     }
-    for (int j = 0; j < n; j++)
+    for (int j = 0; j < n_of_arr; j++)
     {
-        out[j] = out[j] / sum;
-    }
-    
-    return 0;
-    
+        output_arr[j] = input_arr[j] / sum;
+    }    
 }
 
 int main (void){
     //define variables
     int answer = 0;
+    float answer_arr[n_of_output_layer] = {0.0};
+    float loss = 0.0;
+    printf("complete section 1\n");
 
     //define pointer
     float *input_layer;
@@ -79,6 +89,10 @@ int main (void){
     float *bias_of_second_hidden_layer;
     float *weight_to_output_layer;
     float *bias_of_output_layer;
+    float *z1;
+    float *z2;
+    float *zout;
+    printf("complete section 2\n");
 
     //allocetion params
     input_layer = (float*)malloc(n_of_input_layer * sizeof(float));
@@ -91,6 +105,10 @@ int main (void){
     bias_of_second_hidden_layer = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
     weight_to_output_layer = (float*)malloc(n_of_output_layer * n_of_second_hidden_layer * sizeof(float));
     bias_of_output_layer = (float*)malloc(n_of_output_layer * sizeof(float));
+    z1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    z2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    zout = (float*)malloc(n_of_output_layer * sizeof(float));
+    printf("complete section 3\n");
 
     //error
     if (!input_layer || !first_hidden_layer || !second_hidden_layer || !output_layer || !weight_to_first_hidden_layer || !bias_of_first_hidden_layer || !weight_to_second_hidden_layer || !bias_of_second_hidden_layer || !weight_to_output_layer || !bias_of_output_layer)
@@ -98,12 +116,14 @@ int main (void){
         printf("Failed to allocate memory.\n");
         return EXIT_FAILURE;
     }
+    printf("complete section 4\n");
 
     //file
     FILE *learning_data_images, *learning_data_labels;
+    printf("complete section 5\n");
 
     //weight initialize
-    srand(9415);
+    srand(time(NULL));
     for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
     {
         weight_to_first_hidden_layer[i] = rand() / (RAND_MAX+1.0);
@@ -128,6 +148,7 @@ int main (void){
     {
         bias_of_output_layer[i] = 0;
     }
+    printf("complete section 6\n");
 
 
     //loading datas
@@ -145,19 +166,51 @@ int main (void){
         return 2;
     }
     printf("labels have loaded successfully\n");
+    printf("complete section 7\n");
 
     //offset data
     fseek(learning_data_images, 16, 0);
     fseek(learning_data_labels, 8, 0);
+    printf("complete section 8\n");
 
     //inputting data
     for (int i = 0; i < n_of_input_layer; i++)
     {
         input_layer[i] = (float)(fgetc(learning_data_images))/256;
     }
+    printf("complete section 9\n");
 
     //inputting label
     answer = fgetc(learning_data_labels);
+    printf("complete section 10\n");
+
+    //forward pass
+    mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
+    add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
+    gelu(z1, first_hidden_layer, n_of_first_hidden_layer);
+
+    mmul(z2, first_hidden_layer, weight_to_first_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
+    add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
+    gelu(z2, second_hidden_layer, n_of_second_hidden_layer);
+
+    mmul(zout, second_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_second_hidden_layer);
+    add_bias(zout, bias_of_output_layer, n_of_output_layer);
+    softmax(zout, output_layer, n_of_output_layer);
+    printf("complete section 11\n");
+
+    //loss function (cross entropy)
+    for (int i = 0; i < n_of_output_layer; i++)
+    {
+        answer_arr[i] = 0.0;
+    }
+    answer_arr[answer] = 1.0;
+    for (int i = 0; i < n_of_output_layer; i++)
+    {
+        loss = 
+    }
+    
+    
+
 
     //end
     free(input_layer);
@@ -170,6 +223,9 @@ int main (void){
     free(bias_of_second_hidden_layer);
     free(weight_to_output_layer);
     free(bias_of_output_layer);
+    free(z1);
+    free(z2);
+    free(zout);
     input_layer = NULL;
     first_hidden_layer = NULL;
     second_hidden_layer = NULL;
@@ -180,7 +236,11 @@ int main (void){
     bias_of_second_hidden_layer = NULL;
     weight_to_output_layer = NULL;
     bias_of_output_layer = NULL;
+    z1 = NULL;
+    z2 = NULL;
+    zout = NULL;
     fclose(learning_data_images);
     fclose(learning_data_labels);
+    printf("complete section 12\n");
     return 0;
 }
