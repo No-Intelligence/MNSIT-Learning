@@ -10,7 +10,7 @@
 #define n_of_second_hidden_layer 256
 #define n_of_output_layer 10
 
-float max (float input_1, float input_2){
+float larger (float input_1, float input_2){
     if (input_1 > input_2) return input_1;
     else return input_2;
     
