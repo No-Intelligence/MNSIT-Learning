@@ -91,6 +91,18 @@ void compute_output_delta (float *delta3, float *output_layer, float *answer_arr
     }
 }
 
+void weight_grad (float *z, float *previous_activation, float *output_arr, int n_of_output, int n_of_input){
+    for (int i = 0; i < count; i++)
+    {
+        for (int j = 0; j < count; j++)
+        {
+            output_arr[i + j];
+        }
+        
+    }
+    
+}
+
 int main (void){
     //define variables
     int answer = 0;
