@@ -59,7 +59,7 @@ float extract_max (float *input_array, int n_of_input_arr){
 void relu(float *input_arr, float *output_arr, int n_of_arr){
     for (int i = 0; i < n_of_arr; i++)
     {
-        output_arr[i] = max(input_arr[i], 0.0f);
+        output_arr[i] = larger(input_arr[i], 0.0f);
     }
     
 }
@@ -85,22 +85,96 @@ void softmax (float *input_arr, float *output_arr, int n_of_arr){
     }    
 }
 
-void compute_output_delta (float *delta3, float *output_layer, float *answer_arr, int n_of_arr){
-    for (int i = 0; i < n_of_arr; i++) {
-        delta3[i] = output_layer[i] - answer_arr[i];
+void he_initialize_uniform(float *W, int fan_in, int fan_out) {
+    float limit = sqrtf(6.0f / (float)fan_in);
+    for (int i = 0; i < fan_in * fan_out; i++) {
+        W[i] = ((float)rand() / RAND_MAX) * 2.0f * limit - limit;
     }
 }
 
-void weight_grad (float *z, float *previous_activation, float *output_arr, int n_of_output, int n_of_input){
-    for (int i = 0; i < count; i++)
+void compute_output_delta (float *output, float *output_layer, float *answer_arr, int n_of_arr){
+    for (int i = 0; i < n_of_arr; i++) {
+        output[i] = output_layer[i] - answer_arr[i];
+    }
+}
+
+void weight_grad (float *z_delta, float *previous_activation_arr, float *output_arr, int n_of_output, int n_of_input){
+    for (int i = 0; i < n_of_output; i++)
     {
-        for (int j = 0; j < count; j++)
+        for (int j = 0; j < n_of_input; j++)
         {
-            output_arr[i + j];
+            output_arr[i * n_of_input + j] = z_delta[i] * previous_activation_arr[j];
         }
         
     }
     
+}
+
+void grad_bias (float *input, float *output, int n_of_arr){
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        output[i] = input[i];
+    }
+        
+}
+
+void compute_hidden_delta (float *z_delta, float *next_weight, float *z, float *output, int n_of_activation, int n_of_z_delta){
+    for (int i = 0; i < n_of_activation; i++)
+    {
+        output[i] = 0.0f;
+    }
+    for (int i = 0; i < n_of_activation; i++)
+    {
+        for (int j = 0; j < n_of_z_delta; j++)
+        {
+            output[i] += z_delta[j] * next_weight[j * n_of_activation+ i];
+        }
+        
+    }
+
+    for (int i = 0; i < n_of_activation; i++)
+    {
+        if (z[i] <= 0)
+        {
+            output[i] = 0.0f;
+        }
+        
+    }
+    
+}
+
+void update_params(float *weight, float *weight_grad, float *bias, float *bias_grad, int n_of_weight, int n_of_bias){
+    for (int i = 0; i < n_of_weight; i++)
+    {
+        weight[i] += -0.001f * weight_grad[i];
+        weight_grad[i] = 0.0f;
+    }
+    for (int i = 0; i < n_of_bias; i++)
+    {
+        bias[i] += -0.001f * bias_grad[i];
+        bias_grad[i] = 0.0f;
+    }
+    
+}
+
+int find_max_index (float *arr, int size){
+    if(size <= 0){
+        return -1;
+    }
+    int max_index = 0;
+    float max_value = arr[0];
+
+    for (int i = 0; i < size; i++)
+    {
+        if (arr[i] > max_value)
+        {
+            max_value = arr[i];
+            max_index = i;
+        }
+        
+    }
+    
+    return max_index;
 }
 
 int main (void){
@@ -123,6 +197,8 @@ int main (void){
     float *z1;
     float *z2;
     float *zout;
+    float *delta_3, *delta_2, *delta_1;
+    float *grad_to_w3, *grad_to_b3, *grad_to_w2, *grad_to_b2, *grad_to_w1, *grad_to_b1;
 
     //allocetion params
     input_layer = (float*)malloc(n_of_input_layer * sizeof(float));
@@ -138,6 +214,15 @@ int main (void){
     z1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
     z2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
     zout = (float*)malloc(n_of_output_layer * sizeof(float));
+    delta_3 = (float*)malloc(n_of_output_layer * sizeof(float));
+    delta_2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    delta_1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    grad_to_w3 = (float*)malloc(n_of_second_hidden_layer * n_of_output_layer * sizeof(float));
+    grad_to_w2 = (float*)malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
+    grad_to_w1 = (float*)malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
+    grad_to_b3 = (float*)malloc(n_of_output_layer * sizeof(float));
+    grad_to_b2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    grad_to_b1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
 
     //error
     if (!input_layer || !first_hidden_layer || !second_hidden_layer || !output_layer || !weight_to_first_hidden_layer || !bias_of_first_hidden_layer || !weight_to_second_hidden_layer || !bias_of_second_hidden_layer || !weight_to_output_layer || !bias_of_output_layer)
@@ -151,30 +236,21 @@ int main (void){
 
     //weight initialize
     srand(time(NULL));
-    for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
-    {
-        weight_to_first_hidden_layer[i] = rand() / (RAND_MAX+1.0);
-    }
     for (int i = 0; i < n_of_first_hidden_layer; i++)
     {
         bias_of_first_hidden_layer[i] = 0;
-    }
-    for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++)
-    {
-        weight_to_second_hidden_layer[i] = rand() / (RAND_MAX+1.0);
     }
     for (int i = 0; i < n_of_second_hidden_layer; i++)
     {
         bias_of_second_hidden_layer[i] = 0;
     }
-    for (int i = 0; i < n_of_second_hidden_layer * n_of_output_layer; i++)
-    {
-        weight_to_output_layer[i] = rand() / (RAND_MAX+1.0);
-    }
     for (int i = 0; i < n_of_output_layer; i++)
     {
         bias_of_output_layer[i] = 0;
     }
+    he_initialize_uniform(weight_to_first_hidden_layer, n_of_input_layer, n_of_first_hidden_layer);
+    he_initialize_uniform(weight_to_second_hidden_layer, n_of_first_hidden_layer, n_of_second_hidden_layer);
+    he_initialize_uniform(weight_to_output_layer, n_of_second_hidden_layer, n_of_output_layer);
 
 
     //loading datas
@@ -197,6 +273,13 @@ int main (void){
     fseek(learning_data_images, 16, 0);
     fseek(learning_data_labels, 8, 0);
 
+    //learning section
+    printf("learning start\n");
+    for (int loop = 0; loop < 60000; loop++){
+    if (!(loop%100))
+    {
+        printf("%d datas have been precessed.\n", loop);
+    }
     //inputting data
     for (int i = 0; i < n_of_input_layer; i++)
     {
@@ -211,7 +294,7 @@ int main (void){
     add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
     relu(z1, first_hidden_layer, n_of_first_hidden_layer);
 
-    mmul(z2, first_hidden_layer, weight_to_first_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
+    mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
     add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
     relu(z2, second_hidden_layer, n_of_second_hidden_layer);
 
@@ -225,15 +308,131 @@ int main (void){
         answer_arr[i] = 0.0;
     }
     answer_arr[answer] = 1.0;
+    loss = 0.0f;
     for (int i = 0; i < n_of_output_layer; i++)
     {
         loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
     }
     loss = -loss;
-    printf("%f", loss);
+
+    //backward pass
+    compute_output_delta(delta_3, output_layer, answer_arr, n_of_output_layer);
+
+    weight_grad(delta_3, second_hidden_layer, grad_to_w3, n_of_output_layer, n_of_second_hidden_layer);
+    grad_bias(delta_3, grad_to_b3, n_of_output_layer);
+
+    compute_hidden_delta(delta_3, weight_to_output_layer, z2, delta_2, n_of_second_hidden_layer, n_of_output_layer);
+
+    weight_grad(delta_2, first_hidden_layer, grad_to_w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
+    grad_bias(delta_2, grad_to_b2, n_of_second_hidden_layer);
+
+    compute_hidden_delta(delta_2, weight_to_second_hidden_layer, z1, delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
+
+    weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
+    grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
+
+    //update params
+    update_params(weight_to_first_hidden_layer, grad_to_w1, bias_of_first_hidden_layer, grad_to_b1, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
+    update_params(weight_to_second_hidden_layer, grad_to_w2, bias_of_second_hidden_layer, grad_to_b2, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
+    update_params(weight_to_output_layer, grad_to_w3, bias_of_output_layer, grad_to_b3, n_of_second_hidden_layer * n_of_output_layer, n_of_output_layer);
+
+    }
+    printf("Learning has finished.\n");
 
 
 
+    FILE *test_data_images, *test_data_labels;
+    int hit = 0;
+
+    //loading datas
+    test_data_images = fopen("t10k-images.idx3-ubyte", "rb");
+    if (test_data_images == NULL)
+    {
+        printf("images err\n");
+        return 1;
+    }
+    printf("test images have loaded successfully.\n");
+    test_data_labels = fopen("t10k-labels.idx1-ubyte", "rb");
+    if (test_data_labels == NULL)
+    {
+        printf("labels err\n");
+        return 2;
+    }
+    printf("test labels have loaded successfully\n");
+
+    //offset data
+    fseek(test_data_images, 16, 0);
+    fseek(test_data_labels, 8, 0);
+
+    //testify section
+    for (int loop = 0; loop < 10000; loop++){
+    if (!(loop%100))
+    {
+        printf("%d datas have beed precessed.\n", loop);
+    }
+    //inputting data
+    for (int i = 0; i < n_of_input_layer; i++)
+    {
+        input_layer[i] = (float)(fgetc(test_data_images))/256;
+    }
+
+    //inputting label
+    answer = fgetc(test_data_labels);
+
+    //forward pass
+    mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
+    add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
+    relu(z1, first_hidden_layer, n_of_first_hidden_layer);
+
+    mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
+    add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
+    relu(z2, second_hidden_layer, n_of_second_hidden_layer);
+
+    mmul(zout, second_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_second_hidden_layer);
+    add_bias(zout, bias_of_output_layer, n_of_output_layer);
+    softmax(zout, output_layer, n_of_output_layer);
+
+    if (find_max_index(output_layer, n_of_output_layer) == answer)
+    {
+        ++hit;
+    }
+    }
+    printf("hit :%d, Hit rate is %f%%\n", hit, (float)hit/100);
+
+    FILE *param;
+    param =fopen("params.bin", "wb");
+    if (param ==NULL)
+    {
+        return 3;
+    }
+
+    for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
+    {
+        fprintf(param, "%f\n", weight_to_first_hidden_layer[i]);
+    }
+    for (int i = 0; i < n_of_first_hidden_layer; i++)
+    {
+        fprintf(param, "%f\n", bias_of_first_hidden_layer[i]);
+    }
+    for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++)
+    {
+        fprintf(param, "%f\n", weight_to_second_hidden_layer[i]);
+    }
+    for (int i = 0; i < n_of_second_hidden_layer; i++)
+    {
+        fprintf(param, "%f\n", bias_of_second_hidden_layer[i]);
+    }
+    for (int i = 0; i < n_of_second_hidden_layer * n_of_output_layer; i++)
+    {
+        fprintf(param, "%f\n", weight_to_output_layer[i]);
+    }
+    for (int i = 0; i < n_of_output_layer; i++)
+    {
+        fprintf(param, "%f\n", bias_of_output_layer[i]);
+    }
+    
+    
+    
     //end
     free(input_layer);
     free(first_hidden_layer);
@@ -248,6 +447,15 @@ int main (void){
     free(z1);
     free(z2);
     free(zout);
+    free(delta_3);
+    free(delta_2);
+    free(delta_1);
+    free(grad_to_b1);
+    free(grad_to_b2);
+    free(grad_to_b3);
+    free(grad_to_w1);
+    free(grad_to_w2);
+    free(grad_to_w3);
     input_layer = NULL;
     first_hidden_layer = NULL;
     second_hidden_layer = NULL;
@@ -261,7 +469,19 @@ int main (void){
     z1 = NULL;
     z2 = NULL;
     zout = NULL;
+    delta_3 = NULL;
+    delta_2 = NULL;
+    delta_1 = NULL;
+    grad_to_b1 = NULL;
+    grad_to_b2 = NULL;
+    grad_to_b3 = NULL;
+    grad_to_w1 = NULL;
+    grad_to_w2 = NULL;
+    grad_to_w3 = NULL;
     fclose(learning_data_images);
     fclose(learning_data_labels);
+    fclose(test_data_images);
+    fclose(test_data_labels);
+    fclose(param);
     return 0;
 }
