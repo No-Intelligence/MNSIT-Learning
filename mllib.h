@@ -1,11 +1,5 @@
 #include <math.h>
 
-float larger (float input_1, float input_2){
-    if (input_1 > input_2) return input_1;
-    else return input_2;
-    
-}
-
 float extract_max (float *input_array, int n_of_input_arr){
     float max = input_array[0];
     for (int i = 0; i < n_of_input_arr; i++)
@@ -20,6 +14,15 @@ float extract_max (float *input_array, int n_of_input_arr){
     return max;
 }
 
+/**
+ * 行列ベクトル積:
+ *   - 行列とベクトルの積を求めます
+ * @param output_arr 結果を出力する配列
+ * @param input_arr 入力ベクトルの配列
+ * @param matrix 入力行列の配列
+ * @param n_of_output_arr 出力配列の要素数
+ * @param n_of_input_arr 入力配列の要素数
+ */
 void mmul (float *output_arr, float *input_arr, float *matrix, int n_of_output_arr, int n_of_input_arr){
     for (int i = 0; i < n_of_output_arr; i++)
     {
@@ -36,22 +39,68 @@ void mmul (float *output_arr, float *input_arr, float *matrix, int n_of_output_a
     }
 }
 
-void add_bias (float *operated_arr, float *input_bias, int n_of_arr){
+/**
+ * バイアス加算関数:
+ *   - 配列で入力した配列とバイアスを加算します
+ * @param operated_arr バイアスを加算する配列（入出力共有）
+ * @param bias バイアスの配列
+ * @param n_of_arr 配列の要素数
+ */
+void add_bias (float *operated_arr, float *bias, int n_of_arr){
     for (int i = 0; i < n_of_arr; i++)
     {
-        operated_arr[i] = operated_arr[i] + input_bias[i];
+        operated_arr[i] = operated_arr[i] + bias[i];
     }
     
 }
 
+/**
+ * ReLU活性化関数
+ * @param input_arr ReLU関数を適用する配列
+ * @param output_arr 結果を出力する配列
+ * @param n_of_arr 配列の要素数
+ */
 void relu(float *input_arr, float *output_arr, int n_of_arr){
     for (int i = 0; i < n_of_arr; i++)
     {
-        output_arr[i] = larger(input_arr[i], 0.0f);
+        if (input_arr[i] > 0.0f)
+        {
+            output_arr[i] = input_arr[i];
+        }
+        else
+        {
+            output_arr[i] = 0.0f;
+        }
     }
     
 }
 
+/**
+ * Leaky ReLU活性化関数
+ * @param input_arr Leaky ReLU関数を適用する配列
+ * @param output_arr 結果を出力する配列
+ * @param n_of_arr 配列の要素数
+ */
+void leaky_relu(float* input_arr, float* output_arr, int n_of_arr){
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        if (input_arr[i] > 0.0f)
+        {
+            output_arr[i] = input_arr[i];
+        }
+        else
+        {
+            output_arr[i] = 0.01 * input_arr[i];
+        }
+    }
+}
+
+/**
+ * Softmax活性化関数
+ * @param input_arr Softmax関数を適用する配列
+ * @param output_arr 結果を出力する配列
+ * @param n_of_arr 配列の要素数
+ */
 void softmax (float *input_arr, float *output_arr, int n_of_arr){
     float max = 0.0, sum = 0.0;
     max = extract_max(input_arr, n_of_arr);

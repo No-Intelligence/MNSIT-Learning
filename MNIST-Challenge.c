@@ -8,6 +8,7 @@
 #define n_of_input_layer 784
 #define n_of_first_hidden_layer 512
 #define n_of_second_hidden_layer 256
+#define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
 
 float larger (float input_1, float input_2){
@@ -68,6 +69,20 @@ void gelu (float *input_arr, float *output_arr, int n_of_arr){
     for (int i = 0; i < n_of_arr; i++)
     {
         output_arr[i] = 0.5 * input_arr[i] * (1 + tanh(sqrt(2/PI) * (input_arr[i] + 0.044715 * pow(input_arr[i], 3))));
+    }
+}
+
+void leaky_relu(float* input_arr, float* output_arr, int n_of_arr){
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        if (input_arr[i] > 0.0f)
+        {
+            output_arr[i] = input_arr[i];
+        }
+        else
+        {
+            output_arr[i] = 0.01 * input_arr[i];
+        }
     }
 }
 
@@ -143,6 +158,31 @@ void compute_hidden_delta (float *z_delta, float *next_weight, float *z, float *
     
 }
 
+void compute_hidden_delta_leaky (float *z_delta, float *next_weight, float *z, float *output, int n_of_activation, int n_of_z_delta){
+    for (int i = 0; i < n_of_activation; i++)
+    {
+        output[i] = 0.0f;
+    }
+    for (int i = 0; i < n_of_activation; i++)
+    {
+        for (int j = 0; j < n_of_z_delta; j++)
+        {
+            output[i] += z_delta[j] * next_weight[j * n_of_activation+ i];
+        }
+        
+    }
+
+    for (int i = 0; i < n_of_activation; i++)
+    {
+        if (z[i] <= 0)
+        {
+            output[i] = 0.01 * output[i];
+        }
+        
+    }
+    
+}
+
 void update_params(float *weight, float *weight_grad, float *bias, float *bias_grad, int n_of_weight, int n_of_bias){
     for (int i = 0; i < n_of_weight; i++)
     {
@@ -187,49 +227,53 @@ int main (void){
     float *input_layer;
     float *first_hidden_layer;
     float *second_hidden_layer;
+    float *third_hidden_layer;
     float *output_layer;
     float *weight_to_first_hidden_layer;
     float *bias_of_first_hidden_layer;
     float *weight_to_second_hidden_layer;
     float *bias_of_second_hidden_layer;
+    float *weight_to_third_hidden_layer;
+    float *bias_of_third_hidden_layer;
     float *weight_to_output_layer;
     float *bias_of_output_layer;
     float *z1;
     float *z2;
+    float *z3;
     float *zout;
-    float *delta_3, *delta_2, *delta_1;
-    float *grad_to_w3, *grad_to_b3, *grad_to_w2, *grad_to_b2, *grad_to_w1, *grad_to_b1;
+    float *delta_4, *delta_3, *delta_2, *delta_1;
+    float *grad_to_w4, *grad_to_b4, *grad_to_w3, *grad_to_b3, *grad_to_w2, *grad_to_b2, *grad_to_w1, *grad_to_b1;
 
     //allocetion params
     input_layer = (float*)malloc(n_of_input_layer * sizeof(float));
     first_hidden_layer = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
     second_hidden_layer = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    third_hidden_layer = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
     output_layer = (float*)malloc(n_of_output_layer * sizeof(float));
     weight_to_first_hidden_layer = (float*)malloc(n_of_first_hidden_layer * n_of_input_layer * sizeof(float));
     bias_of_first_hidden_layer = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
     weight_to_second_hidden_layer = (float*)malloc(n_of_second_hidden_layer * n_of_first_hidden_layer * sizeof(float));
     bias_of_second_hidden_layer = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
-    weight_to_output_layer = (float*)malloc(n_of_output_layer * n_of_second_hidden_layer * sizeof(float));
+    weight_to_third_hidden_layer = (float*)malloc(n_of_third_hidden_layer * n_of_second_hidden_layer * sizeof(float));
+    bias_of_third_hidden_layer = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
+    weight_to_output_layer = (float*)malloc(n_of_output_layer * n_of_third_hidden_layer * sizeof(float));
     bias_of_output_layer = (float*)malloc(n_of_output_layer * sizeof(float));
     z1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
     z2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    z3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
     zout = (float*)malloc(n_of_output_layer * sizeof(float));
-    delta_3 = (float*)malloc(n_of_output_layer * sizeof(float));
+    delta_4 = (float*)malloc(n_of_output_layer * sizeof(float));
+    delta_3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
     delta_2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
     delta_1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
-    grad_to_w3 = (float*)malloc(n_of_second_hidden_layer * n_of_output_layer * sizeof(float));
+    grad_to_w4 = (float*)malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
+    grad_to_w3 = (float*)malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
     grad_to_w2 = (float*)malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
     grad_to_w1 = (float*)malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-    grad_to_b3 = (float*)malloc(n_of_output_layer * sizeof(float));
+    grad_to_b4 = (float*)malloc(n_of_output_layer * sizeof(float));
+    grad_to_b3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
     grad_to_b2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
     grad_to_b1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
-
-    //error
-    if (!input_layer || !first_hidden_layer || !second_hidden_layer || !output_layer || !weight_to_first_hidden_layer || !bias_of_first_hidden_layer || !weight_to_second_hidden_layer || !bias_of_second_hidden_layer || !weight_to_output_layer || !bias_of_output_layer)
-    {
-        printf("Failed to allocate memory.\n");
-        return EXIT_FAILURE;
-    }
 
     //file
     FILE *learning_data_images, *learning_data_labels;
@@ -244,13 +288,18 @@ int main (void){
     {
         bias_of_second_hidden_layer[i] = 0;
     }
+    for (int i = 0; i < n_of_third_hidden_layer; i++)
+    {
+        bias_of_third_hidden_layer[i] = 0;
+    }
     for (int i = 0; i < n_of_output_layer; i++)
     {
         bias_of_output_layer[i] = 0;
     }
     he_initialize_uniform(weight_to_first_hidden_layer, n_of_input_layer, n_of_first_hidden_layer);
     he_initialize_uniform(weight_to_second_hidden_layer, n_of_first_hidden_layer, n_of_second_hidden_layer);
-    he_initialize_uniform(weight_to_output_layer, n_of_second_hidden_layer, n_of_output_layer);
+    he_initialize_uniform(weight_to_third_hidden_layer, n_of_second_hidden_layer, n_of_third_hidden_layer);
+    he_initialize_uniform(weight_to_output_layer, n_of_third_hidden_layer, n_of_output_layer);
 
 
     //loading datas
@@ -292,13 +341,17 @@ int main (void){
     //forward pass
     mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
     add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
-    relu(z1, first_hidden_layer, n_of_first_hidden_layer);
+    leaky_relu(z1, first_hidden_layer, n_of_first_hidden_layer);
 
     mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
     add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
-    relu(z2, second_hidden_layer, n_of_second_hidden_layer);
+    leaky_relu(z2, second_hidden_layer, n_of_second_hidden_layer);
 
-    mmul(zout, second_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_second_hidden_layer);
+    mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
+    add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
+    leaky_relu(z3, third_hidden_layer, n_of_third_hidden_layer);
+
+    mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
     add_bias(zout, bias_of_output_layer, n_of_output_layer);
     softmax(zout, output_layer, n_of_output_layer);
 
@@ -316,17 +369,22 @@ int main (void){
     loss = -loss;
 
     //backward pass
-    compute_output_delta(delta_3, output_layer, answer_arr, n_of_output_layer);
+    compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
 
-    weight_grad(delta_3, second_hidden_layer, grad_to_w3, n_of_output_layer, n_of_second_hidden_layer);
-    grad_bias(delta_3, grad_to_b3, n_of_output_layer);
+    weight_grad(delta_4, third_hidden_layer, grad_to_w4, n_of_output_layer, n_of_third_hidden_layer);
+    grad_bias(delta_4, grad_to_b4, n_of_output_layer);
 
-    compute_hidden_delta(delta_3, weight_to_output_layer, z2, delta_2, n_of_second_hidden_layer, n_of_output_layer);
+    compute_hidden_delta_leaky(delta_4, weight_to_output_layer, z3, delta_3, n_of_third_hidden_layer, n_of_output_layer);
+
+    weight_grad(delta_3, second_hidden_layer, grad_to_w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
+    grad_bias(delta_3, grad_to_b3, n_of_third_hidden_layer);
+
+    compute_hidden_delta_leaky(delta_3, weight_to_third_hidden_layer, z2, delta_2, n_of_second_hidden_layer, n_of_third_hidden_layer);
 
     weight_grad(delta_2, first_hidden_layer, grad_to_w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
     grad_bias(delta_2, grad_to_b2, n_of_second_hidden_layer);
 
-    compute_hidden_delta(delta_2, weight_to_second_hidden_layer, z1, delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
+    compute_hidden_delta_leaky(delta_2, weight_to_second_hidden_layer, z1, delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
 
     weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
     grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
@@ -334,7 +392,8 @@ int main (void){
     //update params
     update_params(weight_to_first_hidden_layer, grad_to_w1, bias_of_first_hidden_layer, grad_to_b1, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
     update_params(weight_to_second_hidden_layer, grad_to_w2, bias_of_second_hidden_layer, grad_to_b2, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
-    update_params(weight_to_output_layer, grad_to_w3, bias_of_output_layer, grad_to_b3, n_of_second_hidden_layer * n_of_output_layer, n_of_output_layer);
+    update_params(weight_to_third_hidden_layer, grad_to_w3, bias_of_third_hidden_layer, grad_to_b3, n_of_second_hidden_layer * n_of_third_hidden_layer, n_of_third_hidden_layer);
+    update_params(weight_to_output_layer, grad_to_w4, bias_of_output_layer, grad_to_b4, n_of_third_hidden_layer * n_of_output_layer, n_of_output_layer);
 
     }
     printf("Learning has finished.\n");
@@ -382,13 +441,17 @@ int main (void){
     //forward pass
     mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
     add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
-    relu(z1, first_hidden_layer, n_of_first_hidden_layer);
+    leaky_relu(z1, first_hidden_layer, n_of_first_hidden_layer);
 
     mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
     add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
-    relu(z2, second_hidden_layer, n_of_second_hidden_layer);
+    leaky_relu(z2, second_hidden_layer, n_of_second_hidden_layer);
 
-    mmul(zout, second_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_second_hidden_layer);
+    mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
+    add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
+    leaky_relu(z3, third_hidden_layer, n_of_third_hidden_layer);
+
+    mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
     add_bias(zout, bias_of_output_layer, n_of_output_layer);
     softmax(zout, output_layer, n_of_output_layer);
 
@@ -400,7 +463,7 @@ int main (void){
     printf("hit :%d, Hit rate is %f%%\n", hit, (float)hit/100);
 
     FILE *param;
-    param =fopen("params.bin", "wb");
+    param =fopen("params-fashion.bin", "wb");
     if (param ==NULL)
     {
         return 3;
@@ -437,25 +500,32 @@ int main (void){
     free(input_layer);
     free(first_hidden_layer);
     free(second_hidden_layer);
+    free(third_hidden_layer);
     free(output_layer);
     free(weight_to_first_hidden_layer);
     free(bias_of_first_hidden_layer);
     free(weight_to_second_hidden_layer);
     free(bias_of_second_hidden_layer);
+    free(weight_to_third_hidden_layer);
+    free(bias_of_third_hidden_layer);
     free(weight_to_output_layer);
     free(bias_of_output_layer);
     free(z1);
     free(z2);
+    free(z3);
     free(zout);
+    free(delta_4);
     free(delta_3);
     free(delta_2);
     free(delta_1);
     free(grad_to_b1);
     free(grad_to_b2);
     free(grad_to_b3);
+    free(grad_to_b4);
     free(grad_to_w1);
     free(grad_to_w2);
     free(grad_to_w3);
+    free(grad_to_w4);
     input_layer = NULL;
     first_hidden_layer = NULL;
     second_hidden_layer = NULL;
