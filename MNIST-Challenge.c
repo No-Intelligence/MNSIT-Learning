@@ -6,14 +6,19 @@
 
 #define PI 3.14159265358979
 #define n_of_input_layer 784
-#define n_of_first_hidden_layer 576
-#define n_of_second_hidden_layer 384
-#define n_of_third_hidden_layer 192
+#define n_of_first_hidden_layer 512
+#define n_of_second_hidden_layer 256
+#define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.0008
-#define batch_size 100
-#define epoch 3
+#define learning_rate 0.0015
+#define batch_size 32
+#define epoch 10
 #define debug 1
+#define neck_check 0
+#define train_images "train-images.idx3-ubyte"
+#define train_labels "train-labels.idx1-ubyte"
+#define test_images "t10k-images.idx3-ubyte" 
+#define test_labels "t10k-labels.idx1-ubyte"
 
 void shuffle_indices(int* indices, int n) {
     for (int i = n - 1; i > 0; i--) {
@@ -232,14 +237,15 @@ int find_max_index (float *arr, int size){
 
 int main (void){
     //define variables
-    int answer = 0;
+    int answer = 0, hit = 0;
     float answer_arr[n_of_output_layer] = {0.0f};
-    float loss = 0.0f;
+    float loss = 0.0f, avg_loss = 0.0f;
     int order_indices[60000];
     for (int i = 0; i < 60000; i++)
     {
         order_indices[i] = i;
     }
+    clock_t start, end;
     
     //define pointer
     float *input_layer;
@@ -303,7 +309,7 @@ int main (void){
     grad_to_b1t = (float*)malloc(n_of_first_hidden_layer * sizeof(float));    
 
     //file
-    FILE *learning_data_images, *learning_data_labels;
+    FILE *learning_data_images, *learning_data_labels, *test_data_images, *test_data_labels;
 
     //weight initialize
     srand(time(NULL));
@@ -363,174 +369,32 @@ int main (void){
     
 
     //loading datas
-    learning_data_images = fopen("train-images-fashion.idx3-ubyte", "rb");
+    learning_data_images = fopen(train_images, "rb");
     if (learning_data_images == NULL)
     {
-        printf("images err\n");
+        printf("train images err\n");
         return 1;
     }
-    printf("images have loaded successfully.\n");
-    learning_data_labels = fopen("train-labels-fashion.idx1-ubyte", "rb");
+    printf("train images have loaded successfully.\n");
+    learning_data_labels = fopen(train_labels, "rb");
     if (learning_data_labels == NULL)
     {
-        printf("labels err\n");
+        printf("train labels err\n");
         return 2;
     }
-    printf("labels have loaded successfully\n");
-
-    //learning section
-    printf("learning start\n");
-    for (int epoch_loop = 0; epoch_loop < epoch; epoch_loop++){
-        shuffle_indices(order_indices, 60000);
-        for (int loop = 0; loop < 60000; loop++){
-                if (!(loop%100) && debug){
-                    printf("%d datas have been processed.\n", loop);
-                }
-
-                //offset data
-                fseek(learning_data_images, 16 + 784 * order_indices[loop], SEEK_SET);
-                fseek(learning_data_labels, 8 + order_indices[loop], SEEK_SET);
-
-                //inputting data
-                for (int i = 0; i < n_of_input_layer; i++){
-                    input_layer[i] = (float)(fgetc(learning_data_images))/256;
-                }
-
-                //inputting label
-                answer = fgetc(learning_data_labels);
-
-                //forward pass
-                mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
-                add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
-                leaky_relu(z1, first_hidden_layer, n_of_first_hidden_layer);
-
-                mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
-                add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
-                leaky_relu(z2, second_hidden_layer, n_of_second_hidden_layer);
-
-                mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
-                add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
-                leaky_relu(z3, third_hidden_layer, n_of_third_hidden_layer);
-
-                mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
-                add_bias(zout, bias_of_output_layer, n_of_output_layer);
-                softmax(zout, output_layer, n_of_output_layer);
-
-
-                //loss function (cross entropy)
-                for (int i = 0; i < n_of_output_layer; i++){
-                    answer_arr[i] = 0.0;
-                }
-                answer_arr[answer] = 1.0;
-                loss = 0.0f;
-                for (int i = 0; i < n_of_output_layer; i++){
-                    loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
-                }
-                loss = -loss;
-
-                //backward pass
-                compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
-
-                weight_grad(delta_4, third_hidden_layer, grad_to_w4, n_of_output_layer, n_of_third_hidden_layer);
-                grad_bias(delta_4, grad_to_b4, n_of_output_layer);
-
-                compute_hidden_delta_leaky(delta_4, weight_to_output_layer, z3, delta_3, n_of_third_hidden_layer, n_of_output_layer);
-
-                weight_grad(delta_3, second_hidden_layer, grad_to_w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
-                grad_bias(delta_3, grad_to_b3, n_of_third_hidden_layer);
-
-                compute_hidden_delta_leaky(delta_3, weight_to_third_hidden_layer, z2, delta_2, n_of_second_hidden_layer, n_of_third_hidden_layer);
-
-                weight_grad(delta_2, first_hidden_layer, grad_to_w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
-                grad_bias(delta_2, grad_to_b2, n_of_second_hidden_layer);
-
-                compute_hidden_delta_leaky(delta_2, weight_to_second_hidden_layer, z1, delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
-
-                weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
-                grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
-
-                for (int i = 0; i < n_of_first_hidden_layer; i++){
-                    grad_to_b1t[i] += (float)grad_to_b1[i]/epoch;
-                }
-                for (int i = 0; i < n_of_second_hidden_layer; i++){
-                    grad_to_b2t[i] += (float)grad_to_b2[i]/epoch;
-                }
-                for (int i = 0; i < n_of_third_hidden_layer; i++){
-                    grad_to_b3t[i] += (float)grad_to_b3[i]/epoch;
-                }
-                for (int i = 0; i < n_of_output_layer; i++){
-                    grad_to_b4t[i] += (float)grad_to_b4[i]/epoch;
-                }
-                for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
-                    grad_to_w1t[i] += (float)grad_to_w1[i]/epoch;
-                }
-                for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
-                    grad_to_w2t[i] += (float)grad_to_w2[i]/epoch;
-                }
-                for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
-                    grad_to_w3t[i] += (float)grad_to_w3[i]/epoch;
-                }
-                for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
-                    grad_to_w4t[i] += (float)grad_to_w4[i]/epoch;
-                }
-
-                //update params
-                if (loop%batch_size == (batch_size-1)){
-                    update_params(weight_to_first_hidden_layer, grad_to_w1t, bias_of_first_hidden_layer, grad_to_b1t, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
-                    update_params(weight_to_second_hidden_layer, grad_to_w2t, bias_of_second_hidden_layer, grad_to_b2t, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
-                    update_params(weight_to_third_hidden_layer, grad_to_w3t, bias_of_third_hidden_layer, grad_to_b3t, n_of_second_hidden_layer * n_of_third_hidden_layer, n_of_third_hidden_layer);
-                    update_params(weight_to_output_layer, grad_to_w4t, bias_of_output_layer, grad_to_b4t, n_of_third_hidden_layer * n_of_output_layer, n_of_output_layer);
-                    for (int i = 0; i < n_of_first_hidden_layer; i++){
-                        grad_to_b1t[i] = 0.0f;
-                    }
-                    for (int i = 0; i < n_of_second_hidden_layer; i++){
-                        grad_to_b2t[i] = 0.0f;
-                    }
-                    for (int i = 0; i < n_of_third_hidden_layer; i++){
-                        grad_to_b3t[i] = 0.0f;
-                    }
-                    for (int i = 0; i < n_of_output_layer; i++){
-                        grad_to_b4t[i] = 0.0f;
-                    }
-                    for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
-                        grad_to_w1t[i] = 0.0f;
-                    }
-                    for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
-                        grad_to_w2t[i] = 0.0f;
-                    }
-                    for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
-                        grad_to_w3t[i] = 0.0f;
-                    }
-                    for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
-                       grad_to_w4t[i] = 0.0f;
-                    }
-                    if(debug){
-                        printf("%f\n", loss);
-                    }
-                }
-            }
-            fseek(learning_data_images, -784 * 60000, SEEK_CUR);
-            fseek(learning_data_labels, -60000, SEEK_CUR);
-        }
-    printf("Learning has finished.\n");
-
-
-    FILE *test_data_images, *test_data_labels;
-    int hit = 0;
-
-    //loading datas
-    test_data_images = fopen("t10k-images-fashion.idx3-ubyte", "rb");
+    printf("train labels have loaded successfully\n");
+    test_data_images = fopen(test_images, "rb");
     if (test_data_images == NULL)
     {
-        printf("images err\n");
-        return 1;
+        printf("test images err\n");
+        return 3;
     }
     printf("test images have loaded successfully.\n");
-    test_data_labels = fopen("t10k-labels-fashion.idx1-ubyte", "rb");
+    test_data_labels = fopen(test_labels, "rb");
     if (test_data_labels == NULL)
     {
-        printf("labels err\n");
-        return 2;
+        printf("test labels err\n");
+        return 4;
     }
     printf("test labels have loaded successfully\n");
 
@@ -538,95 +402,202 @@ int main (void){
     fseek(test_data_images, 16, 0);
     fseek(test_data_labels, 8, 0);
 
-    //testify section
-    for (int loop = 0; loop < 10000; loop++){
-    if (!(loop%100))
-    {
-        printf("%d datas have beed precessed.\n", loop);
-    }
-    //inputting data
-    for (int i = 0; i < n_of_input_layer; i++)
-    {
-        input_layer[i] = (float)(fgetc(test_data_images))/256;
+
+    printf("learning start\n");
+    for (int epoch_loop = 0; epoch_loop < epoch; epoch_loop++){
+        avg_loss = 0.0f;
+        hit = 0;
+        shuffle_indices(order_indices, 60000);
+
+        //learning section
+        for (int loop = 0; loop < 60000; loop++){
+            //if (!(loop%1000) && debug) {printf("%d datas have been processed.\n", loop);}
+
+            //offset data
+            fseek(learning_data_images, 16 + 784 * order_indices[loop], SEEK_SET);
+            fseek(learning_data_labels, 8 + order_indices[loop], SEEK_SET);
+
+            //inputting data
+            for (int i = 0; i < n_of_input_layer; i++){
+                input_layer[i] = (float)(fgetc(learning_data_images))/256;
+            }
+
+            //inputting label
+            answer = fgetc(learning_data_labels);
+
+            start = clock();
+            //forward pass
+            mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
+            add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
+            relu(z1, first_hidden_layer, n_of_first_hidden_layer);
+
+            mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
+            add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
+            relu(z2, second_hidden_layer, n_of_second_hidden_layer);
+
+            mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
+            add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
+            relu(z3, third_hidden_layer, n_of_third_hidden_layer);
+
+            mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
+            add_bias(zout, bias_of_output_layer, n_of_output_layer);
+            softmax(zout, output_layer, n_of_output_layer);
+
+            end = clock();
+            if (neck_check) {printf("Forward: %f sec\n", (double)(end - start) / CLOCKS_PER_SEC);}
+
+            //loss function (cross entropy)
+            for (int i = 0; i < n_of_output_layer; i++){
+                answer_arr[i] = 0.0;
+            }
+            answer_arr[answer] = 1.0;
+            loss = 0.0f;
+            for (int i = 0; i < n_of_output_layer; i++){
+                loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
+            }
+            loss = -loss;
+            avg_loss += loss;
+
+            start = clock();
+            //backward pass
+            compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
+
+            weight_grad(delta_4, third_hidden_layer, grad_to_w4, n_of_output_layer, n_of_third_hidden_layer);
+            grad_bias(delta_4, grad_to_b4, n_of_output_layer);
+
+            compute_hidden_delta(delta_4, weight_to_output_layer, z3, delta_3, n_of_third_hidden_layer, n_of_output_layer);
+
+            weight_grad(delta_3, second_hidden_layer, grad_to_w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
+            grad_bias(delta_3, grad_to_b3, n_of_third_hidden_layer);
+
+            compute_hidden_delta(delta_3, weight_to_third_hidden_layer, z2, delta_2, n_of_second_hidden_layer, n_of_third_hidden_layer);
+
+            weight_grad(delta_2, first_hidden_layer, grad_to_w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
+            grad_bias(delta_2, grad_to_b2, n_of_second_hidden_layer);
+
+            compute_hidden_delta(delta_2, weight_to_second_hidden_layer, z1, delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
+
+            weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
+            grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
+
+            end = clock();
+            if (neck_check) {printf("Backward: %f sec\n", (double)(end - start) / CLOCKS_PER_SEC);}
+
+            for (int i = 0; i < n_of_first_hidden_layer; i++){
+                grad_to_b1t[i] += (float)grad_to_b1[i]/epoch;
+            }
+            for (int i = 0; i < n_of_second_hidden_layer; i++){
+                grad_to_b2t[i] += (float)grad_to_b2[i]/epoch;
+            }
+            for (int i = 0; i < n_of_third_hidden_layer; i++){
+                grad_to_b3t[i] += (float)grad_to_b3[i]/epoch;
+            }
+            for (int i = 0; i < n_of_output_layer; i++){
+                grad_to_b4t[i] += (float)grad_to_b4[i]/epoch;
+            }
+            for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
+                grad_to_w1t[i] += (float)grad_to_w1[i]/epoch;
+            }
+            for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
+                grad_to_w2t[i] += (float)grad_to_w2[i]/epoch;
+            }
+            for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
+                grad_to_w3t[i] += (float)grad_to_w3[i]/epoch;
+            }
+            for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
+                grad_to_w4t[i] += (float)grad_to_w4[i]/epoch;
+            }
+
+            //update params
+            if (loop%batch_size == (batch_size-1)){
+                update_params(weight_to_first_hidden_layer, grad_to_w1t, bias_of_first_hidden_layer, grad_to_b1t, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
+                update_params(weight_to_second_hidden_layer, grad_to_w2t, bias_of_second_hidden_layer, grad_to_b2t, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
+                update_params(weight_to_third_hidden_layer, grad_to_w3t, bias_of_third_hidden_layer, grad_to_b3t, n_of_second_hidden_layer * n_of_third_hidden_layer, n_of_third_hidden_layer);
+                update_params(weight_to_output_layer, grad_to_w4t, bias_of_output_layer, grad_to_b4t, n_of_third_hidden_layer * n_of_output_layer, n_of_output_layer);
+                for (int i = 0; i < n_of_first_hidden_layer; i++){
+                    grad_to_b1t[i] = 0.0f;
+                }
+                for (int i = 0; i < n_of_second_hidden_layer; i++){
+                    grad_to_b2t[i] = 0.0f;
+                }
+                for (int i = 0; i < n_of_third_hidden_layer; i++){
+                    grad_to_b3t[i] = 0.0f;
+                }
+                for (int i = 0; i < n_of_output_layer; i++){
+                    grad_to_b4t[i] = 0.0f;
+                }
+                for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
+                    grad_to_w1t[i] = 0.0f;
+                }
+                for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
+                    grad_to_w2t[i] = 0.0f;
+                }
+                for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
+                    grad_to_w3t[i] = 0.0f;
+                }
+                for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
+                    grad_to_w4t[i] = 0.0f;
+                }
+            }
+        }
+        printf("at epoch%d, learning has finished. average loss:%f\n", epoch_loop+1, avg_loss / 60000);
+        fseek(learning_data_images, -784 * 60000, SEEK_CUR);
+        fseek(learning_data_labels, -60000, SEEK_CUR);
+        avg_loss = 0.0f;
+
+        //testify section
+        for (int loop = 0; loop < 10000; loop++){
+            //if (!(loop%1000) && debug) {printf("%d datas have beed precessed.\n", loop);}
+            
+            //inputting data
+            for (int i = 0; i < n_of_input_layer; i++)
+            {
+                input_layer[i] = (float)(fgetc(test_data_images))/256;
+            }
+
+            //inputting label
+            answer = fgetc(test_data_labels);
+
+            //forward pass
+            mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
+            add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
+            relu(z1, first_hidden_layer, n_of_first_hidden_layer);
+
+            mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
+            add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
+            relu(z2, second_hidden_layer, n_of_second_hidden_layer);
+
+            mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
+            add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
+            relu(z3, third_hidden_layer, n_of_third_hidden_layer);
+
+            mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
+            add_bias(zout, bias_of_output_layer, n_of_output_layer);
+            softmax(zout, output_layer, n_of_output_layer);
+
+            for (int i = 0; i < n_of_output_layer; i++)
+            {
+                answer_arr[i] = 0.0;
+            }
+            answer_arr[answer] = 1.0;
+            loss = 0.0f;
+            for (int i = 0; i < n_of_output_layer; i++)
+            {
+                loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
+            }
+            loss = -loss;
+            avg_loss += loss;
+            if (find_max_index(output_layer, n_of_output_layer) == answer)
+            {
+                ++hit;
+            }
+        }
+        printf("at epoch%d, test has finished. average loss:%f, hit rate: %f%%\n", epoch_loop+1, avg_loss / 10000, (float)hit/100);
+        fseek(test_data_images, -784 * 10000, SEEK_CUR);
+        fseek(test_data_labels, -10000, SEEK_CUR);
     }
 
-    //inputting label
-    answer = fgetc(test_data_labels);
 
-    //forward pass
-    mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
-    add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
-    leaky_relu(z1, first_hidden_layer, n_of_first_hidden_layer);
-
-    mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
-    add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
-    leaky_relu(z2, second_hidden_layer, n_of_second_hidden_layer);
-
-    mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
-    add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
-    leaky_relu(z3, third_hidden_layer, n_of_third_hidden_layer);
-
-    mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
-    add_bias(zout, bias_of_output_layer, n_of_output_layer);
-    softmax(zout, output_layer, n_of_output_layer);
-
-    for (int i = 0; i < n_of_output_layer; i++)
-    {
-        answer_arr[i] = 0.0;
-    }
-    answer_arr[answer] = 1.0;
-    loss = 0.0f;
-    for (int i = 0; i < n_of_output_layer; i++)
-    {
-        loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
-    }
-    loss = -loss;
-    if (loop % 100 ==0)
-    {
-        if(debug) {printf("%f\n", loss);}
-    }
-
-    if (find_max_index(output_layer, n_of_output_layer) == answer)
-    {
-        ++hit;
-    }
-    }
-    printf("hit :%d, Hit rate is %f%%\n", hit, (float)hit/100);
-
-    FILE *param;
-    param =fopen("params-fashion.bin", "wb");
-    if (param ==NULL)
-    {
-        return 3;
-    }
-
-    for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
-    {
-        fprintf(param, "%f\n", weight_to_first_hidden_layer[i]);
-    }
-    for (int i = 0; i < n_of_first_hidden_layer; i++)
-    {
-        fprintf(param, "%f\n", bias_of_first_hidden_layer[i]);
-    }
-    for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++)
-    {
-        fprintf(param, "%f\n", weight_to_second_hidden_layer[i]);
-    }
-    for (int i = 0; i < n_of_second_hidden_layer; i++)
-    {
-        fprintf(param, "%f\n", bias_of_second_hidden_layer[i]);
-    }
-    for (int i = 0; i < n_of_second_hidden_layer * n_of_output_layer; i++)
-    {
-        fprintf(param, "%f\n", weight_to_output_layer[i]);
-    }
-    for (int i = 0; i < n_of_output_layer; i++)
-    {
-        fprintf(param, "%f\n", bias_of_output_layer[i]);
-    }
-    
-    
-    
     //end
     free(input_layer);
     free(first_hidden_layer);
@@ -702,6 +673,5 @@ int main (void){
     fclose(learning_data_labels);
     fclose(test_data_images);
     fclose(test_data_labels);
-    fclose(param);
     return 0;
 }
