@@ -12,13 +12,13 @@
 #define n_of_output_layer 10
 #define learning_rate 0.0015
 #define batch_size 32
-#define epoch 10
+#define epoch 100
 #define debug 1
 #define neck_check 0
-#define train_images "train-images.idx3-ubyte"
-#define train_labels "train-labels.idx1-ubyte"
-#define test_images "t10k-images.idx3-ubyte" 
-#define test_labels "t10k-labels.idx1-ubyte"
+#define train_images "train-images-fashion.idx3-ubyte"
+#define train_labels "train-labels-fashion.idx1-ubyte"
+#define test_images "t10k-images-fashion.idx3-ubyte"
+#define test_labels "t10k-labels-fashion.idx1-ubyte"
 
 void shuffle_indices(int* indices, int n) {
     for (int i = n - 1; i > 0; i--) {
@@ -309,7 +309,7 @@ int main (void){
     grad_to_b1t = (float*)malloc(n_of_first_hidden_layer * sizeof(float));    
 
     //file
-    FILE *learning_data_images, *learning_data_labels, *test_data_images, *test_data_labels;
+    FILE *learning_data_images, *learning_data_labels, *test_data_images, *test_data_labels, *fp;
 
     //weight initialize
     srand(time(NULL));
@@ -397,6 +397,8 @@ int main (void){
         return 4;
     }
     printf("test labels have loaded successfully\n");
+    fp = fopen("test.csv", "w");
+    fprintf(fp, ",train loss,test loss, hit rate\n");
 
     //offset data
     fseek(test_data_images, 16, 0);
@@ -541,6 +543,7 @@ int main (void){
             }
         }
         printf("at epoch%d, learning has finished. average loss:%f\n", epoch_loop+1, avg_loss / 60000);
+        fprintf(fp, "epoch%d,%f,", epoch_loop+1, avg_loss / 60000);
         fseek(learning_data_images, -784 * 60000, SEEK_CUR);
         fseek(learning_data_labels, -60000, SEEK_CUR);
         avg_loss = 0.0f;
@@ -593,6 +596,7 @@ int main (void){
             }
         }
         printf("at epoch%d, test has finished. average loss:%f, hit rate: %f%%\n", epoch_loop+1, avg_loss / 10000, (float)hit/100);
+        fprintf(fp, "%f,%f\n", avg_loss / 10000, (float)hit/100);
         fseek(test_data_images, -784 * 10000, SEEK_CUR);
         fseek(test_data_labels, -10000, SEEK_CUR);
     }
@@ -673,5 +677,6 @@ int main (void){
     fclose(learning_data_labels);
     fclose(test_data_images);
     fclose(test_data_labels);
+    fclose(fp);
     return 0;
 }
