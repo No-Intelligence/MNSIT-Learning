@@ -13,7 +13,7 @@
 #define n_of_third_hidden_layer 256
 #define n_of_output_layer 10
 #define learning_rate 0.001
-#define batch_size 1
+#define batch_size 40
 #define epoch 1
 #define debug 1
 #define neck_check 1
@@ -283,6 +283,8 @@ void* training_threaded (void* arg){
     float *grad_to_b3t = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
     float *grad_to_b2t = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
     float *grad_to_b1t = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    __uint8_t *all_image_datas = malloc(60000 * 784 * sizeof(__uint8_t));
+    __uint8_t *all_label_datas = malloc(60000 * sizeof(__uint8_t));
     for (int i = 0; i < n_of_first_hidden_layer; i++){
         grad_to_b1t[i] = 0.0f;
     }
@@ -308,27 +310,28 @@ void* training_threaded (void* arg){
         grad_to_w4t[i] = 0.0f;
     }
 
+    //thread handling
+    pthread_mutex_lock(&mutex_data);
+
+    fseek(info->training_data, 16, SEEK_SET);
+    fread(all_image_datas, 1, 784 * 60000, info->training_data);
+    fseek(info->training_label, 8, SEEK_SET);
+    fread(all_label_datas, 1, 60000, info->training_label);
+
+    //thread handling
+    pthread_mutex_unlock(&mutex_data);
+    
     //learning section
         for (int loop = 0; loop < 15000; loop++){
             if (!(loop%1000) && debug) {printf("%d datas have been processed.\n", loop);}
 
-            //thread handling
-            pthread_mutex_lock(&mutex_data);
-            
-            //offset data
-            fseek(info->training_data, 16 + 784 * info->order[loop + 15000 * info->thread_id], SEEK_SET);
-            fseek(info->training_label, 8 + info->order[loop + 15000 * info->thread_id], SEEK_SET);
-
             //inputting data
             for (int i = 0; i < n_of_input_layer; i++){
-                input_layer[i] = (float)(fgetc(info->training_data))/255;
+                input_layer[i] = (float)all_image_datas[784 * info->order[loop + 15000 * info->thread_id] + i] / 255;
             }
 
             //inputting label
-            answer = fgetc(info->training_label);
-
-            //thread handling
-            pthread_mutex_unlock(&mutex_data);
+            answer = all_label_datas[info->order[loop + 15000 * info->thread_id]];
 
             //forward pass
             mmul(z1, input_layer, info->w1, n_of_first_hidden_layer, n_of_input_layer);
@@ -471,6 +474,8 @@ void* training_threaded (void* arg){
         free(grad_to_w2t);
         free(grad_to_w3t);
         free(grad_to_w4t);
+        free(all_image_datas);
+        free(all_label_datas);
         input_layer = NULL;
         first_hidden_layer = NULL;
         second_hidden_layer = NULL;
@@ -500,6 +505,8 @@ void* training_threaded (void* arg){
         grad_to_w2t = NULL;
         grad_to_w3t = NULL;
         grad_to_b4t = NULL;
+        all_image_datas = NULL;
+        all_label_datas = NULL;
         return NULL;
 }
 
@@ -786,7 +793,7 @@ int main (void){
             for (int i = 0; i < n_of_input_layer; i++){
                 input_layer[i] = (float)(fgetc(learning_data_images))/255;
             }
-
+            
             //inputting label
             answer = fgetc(learning_data_labels);
 
