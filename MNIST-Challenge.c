@@ -8,15 +8,15 @@
 
 #define PI 3.14159265358979
 #define n_of_input_layer 784
-#define n_of_first_hidden_layer 512
-#define n_of_second_hidden_layer 256
-#define n_of_third_hidden_layer 128
+#define n_of_first_hidden_layer 1024
+#define n_of_second_hidden_layer 512
+#define n_of_third_hidden_layer 256
 #define n_of_output_layer 10
-#define learning_rate 0.0015
-#define batch_size 32
+#define learning_rate 0.001
+#define batch_size 1
 #define epoch 1
 #define debug 1
-#define neck_check 0
+#define neck_check 1
 #define threaded 1
 #define train_images "train-images-fashion.idx3-ubyte"
 #define train_labels "train-labels-fashion.idx1-ubyte"
@@ -29,6 +29,9 @@ typedef struct {
     int thread_id, *order;
     int *flag1, *flag2, *flag3, *flag4;
 }thread_info_t;
+
+pthread_mutex_t mutex_param;
+pthread_mutex_t mutex_data;
 
 void shuffle_indices(int* indices, int n) {
     for (int i = n - 1; i > 0; i--) {
@@ -248,37 +251,38 @@ int find_max_index (float *arr, int size){
 void* training_threaded (void* arg){
     //standby section
     thread_info_t* info = (thread_info_t*)arg;
-    int answer, answer_arr[10];
+    int answer;
+    float answer_arr[10];
     float loss;
-    float *input_layer = malloc(n_of_input_layer * sizeof(float));
-    float *first_hidden_layer = malloc(n_of_first_hidden_layer * sizeof(float));
-    float *second_hidden_layer = malloc(n_of_second_hidden_layer * sizeof(float));
-    float *third_hidden_layer = malloc(n_of_third_hidden_layer * sizeof(float));
-    float *output_layer = malloc(n_of_output_layer * sizeof(float));
-    float *z1 = malloc(n_of_first_hidden_layer * sizeof(float));
-    float *z2 = malloc(n_of_second_hidden_layer * sizeof(float));
-    float *z3 = malloc(n_of_third_hidden_layer * sizeof(float));
-    float *zout = malloc(n_of_output_layer * sizeof(float));
-    float *delta_4 = malloc(n_of_output_layer * sizeof(float));
-    float *delta_3 = malloc(n_of_third_hidden_layer * sizeof(float));
-    float *delta_2 = malloc(n_of_second_hidden_layer * sizeof(float));
-    float *delta_1 = malloc(n_of_first_hidden_layer * sizeof(float));
-    float *grad_to_w4 = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
-    float *grad_to_w3 = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
-    float *grad_to_w2 = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
-    float *grad_to_w1 = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-    float *grad_to_b4 = malloc(n_of_output_layer * sizeof(float));
-    float *grad_to_b3 = malloc(n_of_third_hidden_layer * sizeof(float));
-    float *grad_to_b2 = malloc(n_of_second_hidden_layer * sizeof(float));
-    float *grad_to_b1 = malloc(n_of_first_hidden_layer * sizeof(float));
-    float *grad_to_w4t = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
-    float *grad_to_w3t = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
-    float *grad_to_w2t = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
-    float *grad_to_w1t = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-    float *grad_to_b4t = malloc(n_of_output_layer * sizeof(float));
-    float *grad_to_b3t = malloc(n_of_third_hidden_layer * sizeof(float));
-    float *grad_to_b2t = malloc(n_of_second_hidden_layer * sizeof(float));
-    float *grad_to_b1t = malloc(n_of_first_hidden_layer * sizeof(float));
+    float *input_layer = (float*)malloc(n_of_input_layer * sizeof(float));
+    float *first_hidden_layer = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    float *second_hidden_layer = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    float *third_hidden_layer = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
+    float *output_layer = (float*)malloc(n_of_output_layer * sizeof(float));
+    float *z1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    float *z2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    float *z3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
+    float *zout = (float*)malloc(n_of_output_layer * sizeof(float));
+    float *delta_4 = (float*)malloc(n_of_output_layer * sizeof(float));
+    float *delta_3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
+    float *delta_2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    float *delta_1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    float *grad_to_w4 = (float*)malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
+    float *grad_to_w3 = (float*)malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
+    float *grad_to_w2 = (float*)malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
+    float *grad_to_w1 = (float*)malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
+    float *grad_to_b4 = (float*)malloc(n_of_output_layer * sizeof(float));
+    float *grad_to_b3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
+    float *grad_to_b2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    float *grad_to_b1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    float *grad_to_w4t = (float*)malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
+    float *grad_to_w3t = (float*)malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
+    float *grad_to_w2t = (float*)malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
+    float *grad_to_w1t = (float*)malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
+    float *grad_to_b4t = (float*)malloc(n_of_output_layer * sizeof(float));
+    float *grad_to_b3t = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
+    float *grad_to_b2t = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
+    float *grad_to_b1t = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
     for (int i = 0; i < n_of_first_hidden_layer; i++){
         grad_to_b1t[i] = 0.0f;
     }
@@ -304,33 +308,16 @@ void* training_threaded (void* arg){
         grad_to_w4t[i] = 0.0f;
     }
 
-    while ((*info->flag1 != 1) && (*info->flag2 != 1) && (*info->flag3 != 1) && (*info->flag4 != 1))
-    {
-        if (info->thread_id == 0)
-        {
-            *info->flag1 = 1;
-        }
-        else if (info->thread_id == 1)
-        {
-            *info->flag2 = 1;
-        }
-        else if (info->thread_id == 2)
-        {
-            *info->flag3 = 1;
-        }
-        else
-        {
-            *info->flag4 = 1;
-        }
-        usleep(1.0);
-    }
-    
     //learning section
         for (int loop = 0; loop < 15000; loop++){
+            if (!(loop%1000) && debug) {printf("%d datas have been processed.\n", loop);}
 
+            //thread handling
+            pthread_mutex_lock(&mutex_data);
+            
             //offset data
-            fseek(info->training_data, 16 + 784 * info->order[loop] + 15000 * info->thread_id, SEEK_SET);
-            fseek(info->training_label, 8 + info->order[loop] + 15000 * info->thread_id, SEEK_SET);
+            fseek(info->training_data, 16 + 784 * info->order[loop + 15000 * info->thread_id], SEEK_SET);
+            fseek(info->training_label, 8 + info->order[loop + 15000 * info->thread_id], SEEK_SET);
 
             //inputting data
             for (int i = 0; i < n_of_input_layer; i++){
@@ -339,6 +326,9 @@ void* training_threaded (void* arg){
 
             //inputting label
             answer = fgetc(info->training_label);
+
+            //thread handling
+            pthread_mutex_unlock(&mutex_data);
 
             //forward pass
             mmul(z1, input_layer, info->w1, n_of_first_hidden_layer, n_of_input_layer);
@@ -414,58 +404,17 @@ void* training_threaded (void* arg){
                 grad_to_w4t[i] += (float)grad_to_w4[i]/epoch;
             }
 
-            //thread handling
-            while ((*info->flag1 != 2) && (*info->flag2 != 2) && (*info->flag3 != 2) && (*info->flag4 != 2))
-            {
-                if (info->thread_id == 0)
-                {
-                    *info->flag1 = 2;
-                }
-                else if (info->thread_id == 1)
-                {
-                    *info->flag2 = 2;
-                }
-                else if (info->thread_id == 2)
-                {
-                    *info->flag3 = 2;
-                }
-                else
-                {
-                    *info->flag4 = 2;
-                }
-                usleep(1.0);
-            }
-            if (info->thread_id == 1)
-            {
-                while (*info->flag1 != 3)
-                {
-                    usleep(1.0);
-                }
-                
-            }
-            else if (info->thread_id == 2)
-            {
-                while (*info->flag2 != 3)
-                {
-                    usleep(1.0);
-                }
-                
-            }
-            else if (info->thread_id == 3)
-            {
-                while (*info->flag3 != 3)
-                {
-                    usleep(1.0);
-                }
-                
-            }
-            
             //update params
             if (loop%batch_size == (batch_size-1)){
+                //thread handling
+                pthread_mutex_lock(&mutex_param);
                 update_params(info->w1, grad_to_w1t, info->b1, grad_to_b1t, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
                 update_params(info->w2, grad_to_w2t, info->b2, grad_to_b2t, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
                 update_params(info->w3, grad_to_w3t, info->b3, grad_to_b3t, n_of_second_hidden_layer * n_of_third_hidden_layer, n_of_third_hidden_layer);
                 update_params(info->w4, grad_to_w4t, info->b4, grad_to_b4t, n_of_third_hidden_layer * n_of_output_layer, n_of_output_layer);
+                //thread handling
+                pthread_mutex_unlock(&mutex_param);
+
                 for (int i = 0; i < n_of_first_hidden_layer; i++){
                     grad_to_b1t[i] = 0.0f;
                 }
@@ -491,23 +440,8 @@ void* training_threaded (void* arg){
                     grad_to_w4t[i] = 0.0f;
                 }
             }
-            if (info->thread_id == 0)
-            {
-                *info->flag1 = 3;
-            }
-            else if (info->thread_id == 1)
-            {
-                *info->flag2 = 3;
-            }
-            else if (info->thread_id == 2)
-            {
-                *info->flag3 = 3;
-            }
-            else
-            {
-                *info->flag4 = 3;
-            }
         }
+
         free(input_layer);
         free(first_hidden_layer);
         free(second_hidden_layer);
@@ -582,11 +516,11 @@ int main (void){
     clock_t start, end;
     thread_info_t info1, info2, info3, info4;
     pthread_t th1, th2, th3, th4;
-    int *flag1, *flag2, *flag3, *flag4;
-    *flag1 = 9;
-    *flag2 = 9;
-    *flag3 = 9;
-    *flag4 = 9;
+    int flag1, flag2, flag3, flag4;
+    flag1 = 9;
+    flag2 = 9;
+    flag3 = 9;
+    flag4 = 9;
     
     //define pointer
     float *input_layer;
@@ -754,6 +688,10 @@ int main (void){
         //learning section
         if (threaded == 1)
         {
+            start = clock();
+            pthread_mutex_init(&mutex_param, NULL);
+            pthread_mutex_init(&mutex_data, NULL);
+
             info1.training_data = learning_data_images;
             info1.training_label = learning_data_labels;
             info1.w1 = weight_to_first_hidden_layer;
@@ -766,10 +704,10 @@ int main (void){
             info1.b4 = bias_of_output_layer;
             info1.thread_id = 0;
             info1.order = order_indices;
-            info1.flag1 = flag1;
-            info1.flag2 = flag2;
-            info1.flag3 = flag3;
-            info1.flag4 = flag4;
+            info1.flag1 = &flag1;
+            info1.flag2 = &flag2;
+            info1.flag3 = &flag3;
+            info1.flag4 = &flag4;
 
             info2.training_data = learning_data_images;
             info2.training_label = learning_data_labels;
@@ -783,10 +721,10 @@ int main (void){
             info2.b4 = bias_of_output_layer;
             info2.thread_id = 1;
             info2.order = order_indices;
-            info2.flag1 = flag1;
-            info2.flag2 = flag2;
-            info2.flag3 = flag3;
-            info2.flag4 = flag4;
+            info2.flag1 = &flag1;
+            info2.flag2 = &flag2;
+            info2.flag3 = &flag3;
+            info2.flag4 = &flag4;
 
             info3.training_data = learning_data_images;
             info3.training_label = learning_data_labels;
@@ -800,10 +738,10 @@ int main (void){
             info3.b4 = bias_of_output_layer;
             info3.thread_id = 2;
             info3.order = order_indices;
-            info3.flag1 = flag1;
-            info3.flag2 = flag2;
-            info3.flag3 = flag3;
-            info3.flag4 = flag4;
+            info3.flag1 = &flag1;
+            info3.flag2 = &flag2;
+            info3.flag3 = &flag3;
+            info3.flag4 = &flag4;
 
             info4.training_data = learning_data_images;
             info4.training_label = learning_data_labels;
@@ -817,10 +755,10 @@ int main (void){
             info4.b4 = bias_of_output_layer;
             info4.thread_id = 3;
             info4.order = order_indices;
-            info4.flag1 = flag1;
-            info4.flag2 = flag2;
-            info4.flag3 = flag3;
-            info4.flag4 = flag4;
+            info4.flag1 = &flag1;
+            info4.flag2 = &flag2;
+            info4.flag3 = &flag3;
+            info4.flag4 = &flag4;
 
             pthread_create(&th1, NULL, training_threaded, &info1);
             pthread_create(&th2, NULL, training_threaded, &info2);
@@ -830,10 +768,15 @@ int main (void){
             pthread_join(th2, NULL);
             pthread_join(th3, NULL);
             pthread_join(th4, NULL);
+
+            pthread_mutex_destroy(&mutex_param);
+            pthread_mutex_destroy(&mutex_data);
+            end = clock();
         }
         else {
+            start = clock();
         for (int loop = 0; loop < 60000; loop++){
-            //if (!(loop%1000) && debug) {printf("%d datas have been processed.\n", loop);}
+            if (!(loop%1000) && debug) {printf("%d datas have been processed.\n", loop);}
 
             //offset data
             fseek(learning_data_images, 16 + 784 * order_indices[loop], SEEK_SET);
@@ -847,7 +790,6 @@ int main (void){
             //inputting label
             answer = fgetc(learning_data_labels);
 
-            start = clock();
             //forward pass
             mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
             add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
@@ -865,9 +807,6 @@ int main (void){
             add_bias(zout, bias_of_output_layer, n_of_output_layer);
             softmax(zout, output_layer, n_of_output_layer);
 
-            end = clock();
-            if (neck_check) {printf("Forward: %f sec\n", (double)(end - start) / CLOCKS_PER_SEC);}
-
             //loss function (cross entropy)
             for (int i = 0; i < n_of_output_layer; i++){
                 answer_arr[i] = 0.0;
@@ -880,7 +819,6 @@ int main (void){
             loss = -loss;
             avg_loss += loss;
 
-            start = clock();
             //backward pass
             compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
 
@@ -901,9 +839,6 @@ int main (void){
 
             weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
             grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
-
-            end = clock();
-            if (neck_check) {printf("Backward: %f sec\n", (double)(end - start) / CLOCKS_PER_SEC);}
 
             for (int i = 0; i < n_of_first_hidden_layer; i++){
                 grad_to_b1t[i] += (float)grad_to_b1[i]/epoch;
@@ -962,16 +897,18 @@ int main (void){
                 }
             }
         }
+        end = clock();
         }
         printf("at epoch%d, training has finished. average loss:%f\n", epoch_loop+1, avg_loss / 60000);
         fprintf(fp, "epoch%d,%f,", epoch_loop+1, avg_loss / 60000);
+        if (neck_check) {printf("time: %f sec\n", (double)(end - start) / CLOCKS_PER_SEC);}
         fseek(learning_data_images, -784 * 60000, SEEK_CUR);
         fseek(learning_data_labels, -60000, SEEK_CUR);
         avg_loss = 0.0f;
 
         //testify section
         for (int loop = 0; loop < 10000; loop++){
-            //if (!(loop%1000) && debug) {printf("%d datas have beed precessed.\n", loop);}
+            if (!(loop%1000) && debug) {printf("%d datas have beed precessed.\n", loop);}
             
             //inputting data
             for (int i = 0; i < n_of_input_layer; i++)
