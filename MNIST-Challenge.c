@@ -14,25 +14,108 @@
 #define n_of_third_hidden_layer 256
 #define n_of_output_layer 10
 #define learning_rate 0.001
-#define batch_size 60
-#define epoch 10
-#define debug 1
-#define neck_check 1
-#define threaded 1
+#define batch_size 96
+#define epoch 20
+#define debug 0
+#define neck_check 0
+#define threaded 0
 #define train_images "train-images-fashion.idx3-ubyte"
 #define train_labels "train-labels-fashion.idx1-ubyte"
 #define test_images "t10k-images-fashion.idx3-ubyte"
 #define test_labels "t10k-labels-fashion.idx1-ubyte"
 
 typedef struct {
-    float *input_data_arr, *input_label_arr;
-    float *w1, *w2, *w3, *w4, *b1, *b2, *b3, *b4;
-    float *w1_grad, *w2_grad, *w3_grad, *w4_grad, *b1_grad, *b2_grad, *b3_grad, *b4_grad;
-    int thread_id, *order;
-}thread_info_t;
+    //buffer
+    uint8_t *training_image_buffer, *training_label_buffer;
 
-pthread_mutex_t mutex_param;
-pthread_mutex_t mutex_data;
+    //weights
+    float  *w1, *w2, *w3, *wout, *b1, *b2, *b3, *bout;
+
+    //activations
+    float *a_in, *a_1, *a_2, *a_3, *a_out;
+    float *z_1, *z_2, *z_3, *z_out;
+
+    //deltas
+    float *delta_1, *delta_2, *delta_3, *delta_4;
+
+    //gradient
+    float *grad_w1, *grad_w2, *grad_w3, *grad_w4, *grad_b1, *grad_b2, *grad_b3, *grad_b4;
+
+    //gradient total
+    float *grad_w1t, *grad_w2t, *grad_w3t, *grad_w4t, *grad_b1t, *grad_b2t, *grad_b3t, *grad_b4t;
+} thread_workspace_t;
+
+thread_workspace_t* alloc_workspace (int n_threads) {
+    thread_workspace_t *p = calloc(n_threads, sizeof(thread_workspace_t));
+    for (size_t i = 0; i < n_threads; i++)
+    {
+        p[i].training_image_buffer = malloc(784 * batch_size / 4 * sizeof(uint8_t));
+        p[i].training_label_buffer = malloc(batch_size / 4 * sizeof(uint8_t));
+        /*p[i].w1 = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
+        p[i].w2 = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
+        p[i].w3 = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
+        p[i].wout = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
+        p[i].b1 = malloc(n_of_first_hidden_layer * sizeof(float));
+        p[i].b2 = malloc(n_of_second_hidden_layer * sizeof(float));
+        p[i].b3 = malloc(n_of_third_hidden_layer * sizeof(float));
+        p[i].bout = malloc(n_of_output_layer * sizeof(float));*/
+        p[i].a_in = malloc(n_of_input_layer * sizeof(float));
+        p[i].a_1 = malloc(n_of_first_hidden_layer * sizeof(float));
+        p[i].a_2 = malloc(n_of_second_hidden_layer * sizeof(float));
+        p[i].a_3 = malloc(n_of_third_hidden_layer * sizeof(float));
+        p[i].a_out = malloc(n_of_output_layer * sizeof(float));
+        p[i].z_1 = malloc(n_of_first_hidden_layer * sizeof(float));
+        p[i].z_2 = malloc(n_of_second_hidden_layer * sizeof(float));
+        p[i].z_3 = malloc(n_of_third_hidden_layer * sizeof(float));
+        p[i].z_out = malloc(n_of_output_layer * sizeof(float));
+        p[i].delta_1 = malloc(n_of_first_hidden_layer * sizeof(float));
+        p[i].delta_2 = malloc(n_of_second_hidden_layer * sizeof(float));
+        p[i].delta_3 = malloc(n_of_third_hidden_layer * sizeof(float));
+        p[i].delta_4 = malloc(n_of_output_layer * sizeof(float));
+        p[i].grad_w1 = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
+        p[i].grad_w2 = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
+        p[i].grad_w3 = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
+        p[i].grad_w4 = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
+        p[i].grad_b1 = malloc(n_of_first_hidden_layer * sizeof(float));
+        p[i].grad_b2 = malloc(n_of_second_hidden_layer * sizeof(float));
+        p[i].grad_b3 = malloc(n_of_third_hidden_layer * sizeof(float));
+        p[i].grad_b4 = malloc(n_of_output_layer * sizeof(float));
+        p[i].grad_w1t = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
+        p[i].grad_w2t = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
+        p[i].grad_w3t = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
+        p[i].grad_w4t = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
+        p[i].grad_b1t = malloc(n_of_first_hidden_layer * sizeof(float));
+        p[i].grad_b2t = malloc(n_of_second_hidden_layer * sizeof(float));
+        p[i].grad_b3t = malloc(n_of_third_hidden_layer * sizeof(float));
+        p[i].grad_b4t = malloc(n_of_output_layer * sizeof(float));
+    }
+    return p;
+}
+
+void free_workspace (thread_workspace_t *p, int n_threads) {
+    for (size_t i = 0; i < n_threads; i++)
+    {
+        //buffer
+        free(p[i].training_image_buffer); free(p[i].training_label_buffer);
+
+        //weights
+        /*free(p[i].w1); free(p[i].w2); free(p[i].w3); free(p[i].wout); free(p[i].b1); free(p[i].b2); free(p[i].b3); free(p[i].bout);*/
+
+        //activations
+        free(p[i].a_in); free(p[i].a_1); free(p[i].a_2); free(p[i].a_3); free(p[i].a_out);
+        free(p[i].z_1); free(p[i].z_2); free(p[i].z_3); free(p[i].z_out);
+        
+        //deltas
+        free(p[i].delta_1); free(p[i].delta_2); free(p[i].delta_3); free(p[i].delta_4);
+        
+        //gradients
+        free(p[i].grad_w1); free(p[i].grad_w2); free(p[i].grad_w3); free(p[i].grad_w4); free(p[i].grad_b1); free(p[i].grad_b2); free(p[i].grad_b3); free(p[i].grad_b4);
+        
+        //gradients total
+        free(p[i].grad_w1t); free(p[i].grad_w2t); free(p[i].grad_w3t); free(p[i].grad_w4t); free(p[i].grad_b1t); free(p[i].grad_b2t); free(p[i].grad_b3t); free(p[i].grad_b4t);
+    }
+    free(p);
+}
 
 void add_four_arr(float *output, float *input1, float *input2, float *input3, float *input4, int n_of_arr){
     for (size_t i = 0; i < n_of_arr; i++)
@@ -258,83 +341,38 @@ int find_max_index (float *arr, int size){
 
 void* training_threaded (void* arg){
     //standby section
-    thread_info_t* info = (thread_info_t*)arg;
+    thread_workspace_t* info = (thread_workspace_t*)arg;
     int answer;
     float answer_arr[10];
     float loss;
-    float *input_layer = (float*)malloc(n_of_input_layer * sizeof(float));
-    float *first_hidden_layer = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
-    float *second_hidden_layer = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
-    float *third_hidden_layer = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
-    float *output_layer = (float*)malloc(n_of_output_layer * sizeof(float));
-    float *z1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
-    float *z2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
-    float *z3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
-    float *zout = (float*)malloc(n_of_output_layer * sizeof(float));
-    float *delta_4 = (float*)malloc(n_of_output_layer * sizeof(float));
-    float *delta_3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
-    float *delta_2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
-    float *delta_1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
-    float *grad_to_w4 = (float*)malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
-    float *grad_to_w3 = (float*)malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
-    float *grad_to_w2 = (float*)malloc(n_of_first_hidden_layer * n_of_second_hidden_layer * sizeof(float));
-    float *grad_to_w1 = (float*)malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-    float *grad_to_b4 = (float*)malloc(n_of_output_layer * sizeof(float));
-    float *grad_to_b3 = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
-    float *grad_to_b2 = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
-    float *grad_to_b1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
-    for (int i = 0; i < n_of_first_hidden_layer; i++){
-        info->b1_grad[i] = 0.0f;
-    }
-    for (int i = 0; i < n_of_second_hidden_layer; i++){
-        info->b2_grad[i] = 0.0f;
-    }
-    for (int i = 0; i < n_of_third_hidden_layer; i++){
-        info->b3_grad[i] = 0.0f;
-    }
-    for (int i = 0; i < n_of_output_layer; i++){
-        info->b4_grad[i] = 0.0f;
-    }
-    for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
-        info->w1_grad[i] = 0.0f;
-    }
-    for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
-        info->w2_grad[i] = 0.0f;
-    }
-    for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
-        info->w3_grad[i] = 0.0f;
-    }
-    for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
-        info->w4_grad[i] = 0.0f;
-    }
     
     //compute section
         for (int loop = 0; loop < batch_size / 4; loop++){
 
             //inputting data
             for (int i = 0; i < n_of_input_layer; i++){
-                input_layer[i] = info->input_data_arr[784 * loop + i];
+                info->a_in[i] = (float)(info->training_image_buffer[784 * loop + i])/255;
             }
 
             //inputting label
-            answer = info->input_label_arr[loop];
+            answer = info->training_label_buffer[loop];
 
             //forward pass
-            mmul(z1, input_layer, info->w1, n_of_first_hidden_layer, n_of_input_layer);
-            add_bias(z1, info->b1, n_of_first_hidden_layer);
-            relu(z1, first_hidden_layer, n_of_first_hidden_layer);
+            mmul(info->z_1, info->a_in, info->w1, n_of_first_hidden_layer, n_of_input_layer);
+            add_bias(info->z_1, info->b1, n_of_first_hidden_layer);
+            relu(info->z_1, info->a_1, n_of_first_hidden_layer);
 
-            mmul(z2, first_hidden_layer, info->w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
-            add_bias(z2, info->b2, n_of_second_hidden_layer);
-            relu(z2, second_hidden_layer, n_of_second_hidden_layer);
+            mmul(info->z_2, info->a_1, info->w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
+            add_bias(info->z_2, info->b2, n_of_second_hidden_layer);
+            relu(info->z_2, info->a_2, n_of_second_hidden_layer);
 
-            mmul(z3, second_hidden_layer, info->w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
-            add_bias(z3, info->b3, n_of_third_hidden_layer);
-            relu(z3, third_hidden_layer, n_of_third_hidden_layer);
+            mmul(info->z_3, info->a_2, info->w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
+            add_bias(info->z_3, info->b3, n_of_third_hidden_layer);
+            relu(info->z_3, info->a_3, n_of_third_hidden_layer);
 
-            mmul(zout, third_hidden_layer, info->w4, n_of_output_layer, n_of_third_hidden_layer);
-            add_bias(zout, info->b4, n_of_output_layer);
-            softmax(zout, output_layer, n_of_output_layer);
+            mmul(info->z_out, info->a_3, info->wout, n_of_output_layer, n_of_third_hidden_layer);
+            add_bias(info->z_out, info->bout, n_of_output_layer);
+            softmax(info->z_out, info->a_out, n_of_output_layer);
 
             //loss function (cross entropy)
             for (int i = 0; i < n_of_output_layer; i++){
@@ -343,99 +381,57 @@ void* training_threaded (void* arg){
             answer_arr[answer] = 1.0;
             loss = 0.0f;
             for (int i = 0; i < n_of_output_layer; i++){
-                loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
+                loss += answer_arr[i] * logf(info->a_out[i] + 1e-8f);
             }
             loss = -loss;
 
             //backward pass
-            compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
+            compute_output_delta(info->delta_4, info->a_out, answer_arr, n_of_output_layer);
 
-            weight_grad(delta_4, third_hidden_layer, grad_to_w4, n_of_output_layer, n_of_third_hidden_layer);
-            grad_bias(delta_4, grad_to_b4, n_of_output_layer);
+            weight_grad(info->delta_4, info->a_3, info->grad_w4, n_of_output_layer, n_of_third_hidden_layer);
+            grad_bias(info->delta_4, info->grad_b4, n_of_output_layer);
 
-            compute_hidden_delta(delta_4, info->w4, z3, delta_3, n_of_third_hidden_layer, n_of_output_layer);
+            compute_hidden_delta(info->delta_4, info->wout, info->z_3, info->delta_3, n_of_third_hidden_layer, n_of_output_layer);
 
-            weight_grad(delta_3, second_hidden_layer, grad_to_w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
-            grad_bias(delta_3, grad_to_b3, n_of_third_hidden_layer);
+            weight_grad(info->delta_3, info->a_2, info->grad_w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
+            grad_bias(info->delta_3, info->grad_b3, n_of_third_hidden_layer);
 
-            compute_hidden_delta(delta_3, info->w3, z2, delta_2, n_of_second_hidden_layer, n_of_third_hidden_layer);
+            compute_hidden_delta(info->delta_3, info->w3, info->z_2, info->delta_2, n_of_second_hidden_layer, n_of_third_hidden_layer);
 
-            weight_grad(delta_2, first_hidden_layer, grad_to_w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
-            grad_bias(delta_2, grad_to_b2, n_of_second_hidden_layer);
+            weight_grad(info->delta_2, info->a_1, info->grad_w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
+            grad_bias(info->delta_2, info->grad_b2, n_of_second_hidden_layer);
 
-            compute_hidden_delta(delta_2, info->w2, z1, delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
+            compute_hidden_delta(info->delta_2, info->w2, info->z_1, info->delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
 
-            weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
-            grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
+            weight_grad(info->delta_1, info->a_in, info->grad_w1, n_of_first_hidden_layer, n_of_input_layer);
+            grad_bias(info->delta_1, info->grad_b1, n_of_first_hidden_layer);
 
             for (int i = 0; i < n_of_first_hidden_layer; i++){
-                info->b1_grad[i] += (float)grad_to_b1[i];
+                info->grad_b1t[i] += (float)info->grad_b1[i];
             }
             for (int i = 0; i < n_of_second_hidden_layer; i++){
-                info->b2_grad[i] += (float)grad_to_b2[i];
+                info->grad_b2t[i] += (float)info->grad_b2[i];
             }
             for (int i = 0; i < n_of_third_hidden_layer; i++){
-                info->b3_grad[i] += (float)grad_to_b3[i];
+                info->grad_b3t[i] += (float)info->grad_b3[i];
             }
             for (int i = 0; i < n_of_output_layer; i++){
-                info->b4_grad[i] += (float)grad_to_b4[i];
+                info->grad_b4t[i] += (float)info->grad_b4[i];
             }
             for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
-                info->w1_grad[i] += (float)grad_to_w1[i];
+                info->grad_w1t[i] += (float)info->grad_w1[i];
             }
             for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
-                info->w2_grad[i] += (float)grad_to_w2[i];
+                info->grad_w2t[i] += (float)info->grad_w2[i];
             }
             for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
-                info->w3_grad[i] += (float)grad_to_w3[i];
+                info->grad_w3t[i] += (float)info->grad_w3[i];
             }
             for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
-                info->w4_grad[i] += (float)grad_to_w4[i];
+                info->grad_w4t[i] += (float)info->grad_w4[i];
             }
         }
 
-        free(input_layer);
-        free(first_hidden_layer);
-        free(second_hidden_layer);
-        free(third_hidden_layer);
-        free(output_layer);
-        free(z1);
-        free(z2);
-        free(z3);
-        free(zout);
-        free(delta_1);
-        free(delta_2);
-        free(delta_3);
-        free(delta_4);
-        free(grad_to_b1);
-        free(grad_to_b2);
-        free(grad_to_b3);
-        free(grad_to_b4);
-        free(grad_to_w1);
-        free(grad_to_w2);
-        free(grad_to_w3);
-        free(grad_to_w4);
-        input_layer = NULL;
-        first_hidden_layer = NULL;
-        second_hidden_layer = NULL;
-        third_hidden_layer = NULL;
-        output_layer = NULL;
-        z1 = NULL;
-        z2 = NULL;
-        z3 = NULL;
-        zout = NULL;
-        delta_1 = NULL;
-        delta_2 = NULL;
-        delta_3 = NULL;
-        delta_4 = NULL;
-        grad_to_b1 = NULL;
-        grad_to_b2 = NULL;
-        grad_to_b3 = NULL;
-        grad_to_b4 = NULL;
-        grad_to_w1 = NULL;
-        grad_to_w2 = NULL;
-        grad_to_w3 = NULL;
-        grad_to_b4 = NULL;
         return NULL;
 }
 
@@ -450,7 +446,6 @@ int main (void){
         order_indices[i] = i;
     }
     clock_t start, end;
-    thread_info_t info1, info2, info3, info4;
     pthread_t th1, th2, th3, th4;
     
     
@@ -514,6 +509,7 @@ int main (void){
     grad_to_b3t = (float*)malloc(n_of_third_hidden_layer * sizeof(float));
     grad_to_b2t = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
     grad_to_b1t = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
+    thread_workspace_t *ws = alloc_workspace(4);
 
     //file
     FILE *learning_data_images, *learning_data_labels, *test_data_images, *test_data_labels, *fp;
@@ -620,240 +616,143 @@ int main (void){
         //learning section
         if (threaded == 1)
         {
+            start = clock();
             //standby section
-            float *grad_to_w1_th1 = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_w2_th1 = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer *sizeof(float));
-            float *grad_to_w3_th1 = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_w4_th1 = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
-            float *grad_to_b1_th1 = malloc(n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_b2_th1 = malloc(n_of_second_hidden_layer * sizeof(float));
-            float *grad_to_b3_th1 = malloc(n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_b4_th1 = malloc(n_of_output_layer * sizeof(float));
-            float *grad_to_w1_th2 = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_w2_th2 = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer *sizeof(float));
-            float *grad_to_w3_th2 = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_w4_th2 = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
-            float *grad_to_b1_th2 = malloc(n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_b2_th2 = malloc(n_of_second_hidden_layer * sizeof(float));
-            float *grad_to_b3_th2 = malloc(n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_b4_th2 = malloc(n_of_output_layer * sizeof(float));
-            float *grad_to_w1_th3 = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_w2_th3 = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer *sizeof(float));
-            float *grad_to_w3_th3 = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_w4_th3 = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
-            float *grad_to_b1_th3 = malloc(n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_b2_th3 = malloc(n_of_second_hidden_layer * sizeof(float));
-            float *grad_to_b3_th3 = malloc(n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_b4_th3 = malloc(n_of_output_layer * sizeof(float));
-            float *grad_to_w1_th4 = malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_w2_th4 = malloc(n_of_first_hidden_layer * n_of_second_hidden_layer *sizeof(float));
-            float *grad_to_w3_th4 = malloc(n_of_second_hidden_layer * n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_w4_th4 = malloc(n_of_third_hidden_layer * n_of_output_layer * sizeof(float));
-            float *grad_to_b1_th4 = malloc(n_of_first_hidden_layer * sizeof(float));
-            float *grad_to_b2_th4 = malloc(n_of_second_hidden_layer * sizeof(float));
-            float *grad_to_b3_th4 = malloc(n_of_third_hidden_layer * sizeof(float));
-            float *grad_to_b4_th4 = malloc(n_of_output_layer * sizeof(float));
-            float *input_data_arr_th1 = malloc(784 * batch_size / 4 * sizeof(float));
-            float *input_data_arr_th2 = malloc(784 * batch_size / 4 * sizeof(float));
-            float *input_data_arr_th3 = malloc(784 * batch_size / 4 * sizeof(float));
-            float *input_data_arr_th4 = malloc(784 * batch_size / 4 * sizeof(float));
-            float *input_label_arr_th1 = malloc(batch_size / 4 * sizeof(float));
-            float *input_label_arr_th2 = malloc(batch_size / 4 * sizeof(float));
-            float *input_label_arr_th3 = malloc(batch_size / 4 * sizeof(float));
-            float *input_label_arr_th4 = malloc(batch_size / 4 * sizeof(float));
-            
-            info1.w1 = weight_to_first_hidden_layer;
-            info1.w2 = weight_to_second_hidden_layer;
-            info1.w3 = weight_to_third_hidden_layer;
-            info1.w4 = weight_to_output_layer;
-            info1.b1 = bias_of_first_hidden_layer;
-            info1.b2 = bias_of_second_hidden_layer;
-            info1.b3 = bias_of_third_hidden_layer;
-            info1.b4 = bias_of_output_layer;
-            info1.thread_id = 0;
-            info1.order = order_indices;
-            info1.w1_grad = grad_to_w1_th1;
-            info1.w2_grad = grad_to_w2_th1;
-            info1.w3_grad = grad_to_w3_th1;
-            info1.w4_grad = grad_to_w4_th1;
-            info1.b1_grad = grad_to_b1_th1;
-            info1.b2_grad = grad_to_b2_th1;
-            info1.b3_grad = grad_to_b3_th1;
-            info1.b4_grad = grad_to_b4_th1;
+            for (size_t i = 0; i < 4; i++)
+            {
+                ws[i].w1 = weight_to_first_hidden_layer;
+                ws[i].w2 = weight_to_second_hidden_layer;
+                ws[i].w3 = weight_to_third_hidden_layer;
+                ws[i].wout = weight_to_output_layer;
+                ws[i].b1 = bias_of_first_hidden_layer;
+                ws[i].b2 = bias_of_second_hidden_layer;
+                ws[i].b3 = bias_of_third_hidden_layer;
+                ws[i].bout = bias_of_output_layer;
+            }
 
-            info2.w1 = weight_to_first_hidden_layer;
-            info2.w2 = weight_to_second_hidden_layer;
-            info2.w3 = weight_to_third_hidden_layer;
-            info2.w4 = weight_to_output_layer;
-            info2.b1 = bias_of_first_hidden_layer;
-            info2.b2 = bias_of_second_hidden_layer;
-            info2.b3 = bias_of_third_hidden_layer;
-            info2.b4 = bias_of_output_layer;
-            info2.thread_id = 1;
-            info2.order = order_indices;
-            info2.w1_grad = grad_to_w1_th2;
-            info2.w2_grad = grad_to_w2_th2;
-            info2.w3_grad = grad_to_w3_th2;
-            info2.w4_grad = grad_to_w4_th2;
-            info2.b1_grad = grad_to_b1_th2;
-            info2.b2_grad = grad_to_b2_th2;
-            info2.b3_grad = grad_to_b3_th2;
-            info2.b4_grad = grad_to_b4_th2;
+            //file buffering
+            uint8_t *training_image_buffer = malloc(60000 * 784 * sizeof(uint8_t));
+            uint8_t *training_label_buffer = malloc(60000 * sizeof(uint8_t));
+            fseek(learning_data_images, 16, SEEK_SET);
+            fread(training_image_buffer, sizeof(uint8_t), 60000 * 784, learning_data_images);
+            fseek(learning_data_labels, 8, SEEK_SET);
+            fread(training_label_buffer, sizeof(uint8_t), 60000, learning_data_labels);
 
-            info3.w1 = weight_to_first_hidden_layer;
-            info3.w2 = weight_to_second_hidden_layer;
-            info3.w3 = weight_to_third_hidden_layer;
-            info3.w4 = weight_to_output_layer;
-            info3.b1 = bias_of_first_hidden_layer;
-            info3.b2 = bias_of_second_hidden_layer;
-            info3.b3 = bias_of_third_hidden_layer;
-            info3.b4 = bias_of_output_layer;
-            info3.thread_id = 2;
-            info3.order = order_indices;
-            info3.w1_grad = grad_to_w1_th3;
-            info3.w2_grad = grad_to_w2_th3;
-            info3.w3_grad = grad_to_w3_th3;
-            info3.w4_grad = grad_to_w4_th3;
-            info3.b1_grad = grad_to_b1_th3;
-            info3.b2_grad = grad_to_b2_th3;
-            info3.b3_grad = grad_to_b3_th3;
-            info3.b4_grad = grad_to_b4_th3;
-            
-            info4.w1 = weight_to_first_hidden_layer;
-            info4.w2 = weight_to_second_hidden_layer;
-            info4.w3 = weight_to_third_hidden_layer;
-            info4.w4 = weight_to_output_layer;
-            info4.b1 = bias_of_first_hidden_layer;
-            info4.b2 = bias_of_second_hidden_layer;
-            info4.b3 = bias_of_third_hidden_layer;
-            info4.b4 = bias_of_output_layer;
-            info4.thread_id = 3;
-            info4.order = order_indices;
-            info4.w1_grad = grad_to_w1_th4;
-            info4.w2_grad = grad_to_w2_th4;
-            info4.w3_grad = grad_to_w3_th4;
-            info4.w4_grad = grad_to_w4_th4;
-            info4.b1_grad = grad_to_b1_th4;
-            info4.b2_grad = grad_to_b2_th4;
-            info4.b3_grad = grad_to_b3_th4;
-            info4.b4_grad = grad_to_b4_th4;
-
+            //training section
             for (int loop = 0; loop < 60000/batch_size; loop++)
             {
                 if (!(loop%100) && debug) {printf("%d datas have been processed.\n", loop);}
-                //datas inport
-                for (size_t i = 0; i < batch_size / 4; i++)
+
+                //reset total grad
+                for (size_t i = 0; i < 4; i++)
                 {
-                    //first thread inport
-                    fseek(learning_data_images, 16 + 784 * order_indices[i + batch_size / 4 * loop], SEEK_SET);
-                    for (size_t j = 0; j < n_of_input_layer; j++)
+                    for (size_t j = 0; j < n_of_input_layer * n_of_first_hidden_layer; j++)
                     {
-                        input_data_arr_th1[784 * i + j] = (float)(fgetc(learning_data_images)) / 255;
+                        ws[i].grad_w1t[j] = 0.0f;
                     }
-                    fseek(learning_data_labels, 8 + order_indices[i + batch_size / 4 * loop], SEEK_SET);
-                    input_label_arr_th1[i] = fgetc(learning_data_labels);
 
-                    //second thread inport
-                    fseek(learning_data_images, 16 + 784 * order_indices[i + 15000 + batch_size / 4 * loop], SEEK_SET);
-                    for (size_t j = 0; j < n_of_input_layer; j++)
+                }  
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < n_of_first_hidden_layer * n_of_second_hidden_layer; j++)
                     {
-                        input_data_arr_th2[784 * i + j] = (float)(fgetc(learning_data_images)) / 255;
+                        ws[i].grad_w2t[j] = 0.0f;
                     }
-                    fseek(learning_data_labels, 8 + order_indices[i + 15000 + batch_size / 4 * loop], SEEK_SET);
-                    input_label_arr_th2[i] = fgetc(learning_data_labels);
-
-                    //third thread inport
-                    fseek(learning_data_images, 16 + 784 * order_indices[i + 30000 + batch_size / 4 * loop], SEEK_SET);
-                    for (size_t j = 0; j < n_of_input_layer; j++)
-                    {
-                        input_data_arr_th3[784 * i + j] = (float)(fgetc(learning_data_images)) / 255;
-                    }
-                    fseek(learning_data_labels, 8 + order_indices[i + 30000 + batch_size / 4 * loop], SEEK_SET);
-                    input_label_arr_th3[i] = fgetc(learning_data_labels);
-
-                    //fourth thread inport
-                    fseek(learning_data_images, 16 + 784 * order_indices[i + 45000 + batch_size / 4 * loop], SEEK_SET);
-                    for (size_t j = 0; j < n_of_input_layer; j++)
-                    {
-                        input_data_arr_th4[784 * i + j] = (float)(fgetc(learning_data_images)) / 255;
-                    }
-                    fseek(learning_data_labels, 8 + order_indices[i + 45000 + batch_size / 4 * loop], SEEK_SET);
-                    input_label_arr_th4[i] = fgetc(learning_data_labels);
+                
                 }
-                info1.input_data_arr = input_data_arr_th1;
-                info1.input_label_arr = input_label_arr_th1;
-                info2.input_data_arr = input_data_arr_th2;
-                info2.input_label_arr = input_label_arr_th2;
-                info3.input_data_arr = input_data_arr_th3;
-                info3.input_label_arr = input_label_arr_th3;
-                info4.input_data_arr = input_data_arr_th4;
-                info4.input_label_arr = input_label_arr_th4;
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < n_of_second_hidden_layer * n_of_third_hidden_layer; j++)
+                    {
+                        ws[i].grad_w3t[j] = 0.0f;
+                    }
+                
+                }
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < n_of_third_hidden_layer * n_of_output_layer; j++)
+                    {
+                        ws[i].grad_w4t[j] = 0.0f;
+                    }
+                
+                }
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < n_of_first_hidden_layer; j++)
+                    {
+                        ws[i].grad_b1t[j] = 0.0f;
+                    }
+                
+                }
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < n_of_second_hidden_layer; j++)
+                    {
+                        ws[i].grad_b2t[j] = 0.0f;
+                    }
+                
+                }
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < n_of_third_hidden_layer; j++)
+                    {
+                        ws[i].grad_b3t[j] = 0.0f;
+                    }
+                
+                }
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < n_of_output_layer; j++)
+                    {
+                        ws[i].grad_b4t[j] = 0.0f;
+                    }
+                
+                }
 
+                //datas inport
+                for (size_t i = 0; i < 4; i++)
+                {
+                    for (size_t j = 0; j < batch_size / 4; j++)
+                    {
+                        for (size_t copy_image = 0; copy_image < 784; copy_image++)
+                        {
+                            ws[i].training_image_buffer[784 * j + copy_image] = training_image_buffer[784 * order_indices[15000 * i + j + batch_size / 4 * loop] + copy_image];
+                        }
+                        
+                        ws[i].training_label_buffer[j] = training_label_buffer[order_indices[15000 * i + j + batch_size / 4 * loop]];
+                    }
+                    
+                }
+                
                 //compute grad
-                pthread_create(&th1, NULL, training_threaded, &info1);
-                pthread_create(&th2, NULL, training_threaded, &info2);
-                pthread_create(&th3, NULL, training_threaded, &info3);
-                pthread_create(&th4, NULL, training_threaded, &info4);
+                pthread_create(&th1, NULL, training_threaded, &ws[0]);
+                pthread_create(&th2, NULL, training_threaded, &ws[1]);
+                pthread_create(&th3, NULL, training_threaded, &ws[2]);
+                pthread_create(&th4, NULL, training_threaded, &ws[3]);
                 pthread_join(th1, NULL);
                 pthread_join(th2, NULL);
                 pthread_join(th3, NULL);
                 pthread_join(th4, NULL);
 
                 //update params
-                add_four_arr(grad_to_b1t, grad_to_b1_th1, grad_to_b1_th2, grad_to_b1_th3, grad_to_b1_th4, n_of_first_hidden_layer);
-                add_four_arr(grad_to_b2t, grad_to_b2_th1, grad_to_b2_th2, grad_to_b2_th3, grad_to_b2_th4, n_of_second_hidden_layer);
-                add_four_arr(grad_to_b3t, grad_to_b3_th1, grad_to_b3_th2, grad_to_b3_th3, grad_to_b3_th4, n_of_third_hidden_layer);
-                add_four_arr(grad_to_b4t, grad_to_b4_th1, grad_to_b4_th2, grad_to_b4_th3, grad_to_b4_th4, n_of_output_layer);
-                add_four_arr(grad_to_w1t, grad_to_w1_th1, grad_to_w1_th2, grad_to_w1_th3, grad_to_w1_th4, n_of_first_hidden_layer * n_of_input_layer);
-                add_four_arr(grad_to_w2t, grad_to_w2_th1, grad_to_w2_th2, grad_to_w2_th3, grad_to_w2_th4, n_of_second_hidden_layer * n_of_first_hidden_layer);
-                add_four_arr(grad_to_w3t, grad_to_w3_th1, grad_to_w3_th2, grad_to_w3_th3, grad_to_w3_th4, n_of_third_hidden_layer * n_of_second_hidden_layer);
-                add_four_arr(grad_to_w4t, grad_to_w4_th1, grad_to_w4_th2, grad_to_w4_th3, grad_to_w4_th4, n_of_output_layer * n_of_third_hidden_layer);
+                add_four_arr(grad_to_b1t, ws[0].grad_b1t, ws[1].grad_b1t, ws[2].grad_b1t, ws[3].grad_b1t, n_of_first_hidden_layer);
+                add_four_arr(grad_to_b2t, ws[0].grad_b2t, ws[1].grad_b2t, ws[2].grad_b2t, ws[3].grad_b2t, n_of_second_hidden_layer);
+                add_four_arr(grad_to_b3t, ws[0].grad_b3t, ws[1].grad_b3t, ws[2].grad_b3t, ws[3].grad_b3t, n_of_third_hidden_layer);
+                add_four_arr(grad_to_b4t, ws[0].grad_b4t, ws[1].grad_b4t, ws[2].grad_b4t, ws[3].grad_b4t, n_of_output_layer);
+                add_four_arr(grad_to_w1t, ws[0].grad_w1t, ws[1].grad_w1t, ws[2].grad_w1t, ws[3].grad_w1t, n_of_first_hidden_layer * n_of_input_layer);
+                add_four_arr(grad_to_w2t, ws[0].grad_w2t, ws[1].grad_w2t, ws[2].grad_w2t, ws[3].grad_w2t, n_of_second_hidden_layer * n_of_first_hidden_layer);
+                add_four_arr(grad_to_w3t, ws[0].grad_w3t, ws[1].grad_w3t, ws[2].grad_w3t, ws[3].grad_w3t, n_of_third_hidden_layer * n_of_second_hidden_layer);
+                add_four_arr(grad_to_w4t, ws[0].grad_w4t, ws[1].grad_w4t, ws[2].grad_w4t, ws[3].grad_w4t, n_of_output_layer * n_of_third_hidden_layer);
 
                 update_params(weight_to_first_hidden_layer, grad_to_w1t, bias_of_first_hidden_layer, grad_to_b1t, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
                 update_params(weight_to_second_hidden_layer, grad_to_w2t, bias_of_second_hidden_layer, grad_to_b2t, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
                 update_params(weight_to_third_hidden_layer, grad_to_w3t, bias_of_third_hidden_layer, grad_to_b3t, n_of_second_hidden_layer * n_of_third_hidden_layer, n_of_third_hidden_layer);
                 update_params(weight_to_output_layer, grad_to_w4t, bias_of_output_layer, grad_to_b4t, n_of_third_hidden_layer * n_of_output_layer, n_of_output_layer);
             }
-            free(grad_to_w1_th1);
-            free(grad_to_w2_th1);
-            free(grad_to_w3_th1);
-            free(grad_to_w4_th1);
-            free(grad_to_b1_th1);
-            free(grad_to_b2_th1);
-            free(grad_to_b3_th1);
-            free(grad_to_b4_th1);
-            free(grad_to_w1_th2);
-            free(grad_to_w2_th2);
-            free(grad_to_w3_th2);
-            free(grad_to_w4_th2);
-            free(grad_to_b1_th2);
-            free(grad_to_b2_th2);
-            free(grad_to_b3_th2);
-            free(grad_to_b4_th2);
-            free(grad_to_w1_th3);
-            free(grad_to_w2_th3);
-            free(grad_to_w3_th3);
-            free(grad_to_w4_th3);
-            free(grad_to_b1_th3);
-            free(grad_to_b2_th3);
-            free(grad_to_b3_th3);
-            free(grad_to_b4_th3);
-            free(grad_to_w1_th4);
-            free(grad_to_w2_th4);
-            free(grad_to_w3_th4);
-            free(grad_to_w4_th4);
-            free(grad_to_b1_th4);
-            free(grad_to_b2_th4);
-            free(grad_to_b3_th4);
-            free(grad_to_b4_th4);
-            free(input_data_arr_th1);
-            free(input_data_arr_th2);
-            free(input_data_arr_th3);
-            free(input_data_arr_th4);
-            free(input_label_arr_th1);
-            free(input_label_arr_th2);
-            free(input_label_arr_th3);
-            free(input_label_arr_th4);
+
+            free(training_image_buffer);
+            free(training_label_buffer);
+            end = clock();
         }
         else {
             start = clock();
@@ -923,28 +822,28 @@ int main (void){
             grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
 
             for (int i = 0; i < n_of_first_hidden_layer; i++){
-                grad_to_b1t[i] += (float)grad_to_b1[i]/epoch;
+                grad_to_b1t[i] += (float)grad_to_b1[i]/batch_size;
             }
             for (int i = 0; i < n_of_second_hidden_layer; i++){
-                grad_to_b2t[i] += (float)grad_to_b2[i]/epoch;
+                grad_to_b2t[i] += (float)grad_to_b2[i]/batch_size;
             }
             for (int i = 0; i < n_of_third_hidden_layer; i++){
-                grad_to_b3t[i] += (float)grad_to_b3[i]/epoch;
+                grad_to_b3t[i] += (float)grad_to_b3[i]/batch_size;
             }
             for (int i = 0; i < n_of_output_layer; i++){
-                grad_to_b4t[i] += (float)grad_to_b4[i]/epoch;
+                grad_to_b4t[i] += (float)grad_to_b4[i]/batch_size;
             }
             for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
-                grad_to_w1t[i] += (float)grad_to_w1[i]/epoch;
+                grad_to_w1t[i] += (float)grad_to_w1[i]/batch_size;
             }
             for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
-                grad_to_w2t[i] += (float)grad_to_w2[i]/epoch;
+                grad_to_w2t[i] += (float)grad_to_w2[i]/batch_size;
             }
             for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
-                grad_to_w3t[i] += (float)grad_to_w3[i]/epoch;
+                grad_to_w3t[i] += (float)grad_to_w3[i]/batch_size;
             }
             for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
-                grad_to_w4t[i] += (float)grad_to_w4[i]/epoch;
+                grad_to_w4t[i] += (float)grad_to_w4[i]/batch_size;
             }
 
             //update params
@@ -983,7 +882,8 @@ int main (void){
         }
         printf("at epoch%d, training has finished. average loss:%f\n", epoch_loop+1, avg_loss / 60000);
         fprintf(fp, "epoch%d,%f,", epoch_loop+1, avg_loss / 60000);
-        if (neck_check) {printf("time: %f sec\n", (double)(end - start) / CLOCKS_PER_SEC);}
+        if (neck_check && !threaded) {printf("time: %f sec\n", (double)(end - start) / CLOCKS_PER_SEC);}
+        else if (neck_check && threaded) {printf("time: %f sec\n", (double)(end - start)/4 / CLOCKS_PER_SEC);}
         fseek(learning_data_images, -784 * 60000, SEEK_CUR);
         fseek(learning_data_labels, -60000, SEEK_CUR);
         avg_loss = 0.0f;
@@ -1113,6 +1013,7 @@ int main (void){
     grad_to_w2t = NULL;
     grad_to_w3t = NULL;
     grad_to_b4t = NULL;
+    free_workspace(ws, 4);
     fclose(learning_data_images);
     fclose(learning_data_labels);
     fclose(test_data_images);
