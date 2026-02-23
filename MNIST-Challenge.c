@@ -9,14 +9,14 @@
 
 #define PI 3.14159265358979
 #define n_of_input_layer 784
-#define n_of_first_hidden_layer 1024
-#define n_of_second_hidden_layer 512
-#define n_of_third_hidden_layer 256
+#define n_of_first_hidden_layer 512
+#define n_of_second_hidden_layer 256
+#define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
 #define learning_rate 0.001
-#define batch_size 96
+#define batch_size 32
 #define epoch 20
-#define debug 0
+#define debug 1
 #define neck_check 0
 #define threaded 0
 #define train_images "train-images-fashion.idx3-ubyte"
@@ -756,20 +756,22 @@ int main (void){
         }
         else {
             start = clock();
+            uint8_t *training_image_buffer = malloc(60000 * 784 * sizeof(uint8_t));
+            uint8_t *training_label_buffer = malloc(60000 * sizeof(uint8_t));
+            fseek(learning_data_images, 16, SEEK_SET);
+            fread(training_image_buffer, sizeof(uint8_t), 60000 * 784, learning_data_images);
+            fseek(learning_data_labels, 8, SEEK_SET);
+            fread(training_label_buffer, sizeof(uint8_t), 60000, learning_data_labels);
         for (int loop = 0; loop < 60000; loop++){
             if (!(loop%1000) && debug) {printf("%d datas have been processed.\n", loop);}
 
-            //offset data
-            fseek(learning_data_images, 16 + 784 * order_indices[loop], SEEK_SET);
-            fseek(learning_data_labels, 8 + order_indices[loop], SEEK_SET);
-
             //inputting data
             for (int i = 0; i < n_of_input_layer; i++){
-                input_layer[i] = (float)(fgetc(learning_data_images))/255;
+                input_layer[i] = (float)(training_image_buffer[784 * order_indices[loop] + i])/255;
             }
             
             //inputting label
-            answer = fgetc(learning_data_labels);
+            answer = training_label_buffer[order_indices[loop]];
 
             //forward pass
             mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
@@ -879,6 +881,8 @@ int main (void){
             }
         }
         end = clock();
+        free(training_image_buffer);
+        free(training_label_buffer);
         }
         printf("at epoch%d, training has finished. average loss:%f\n", epoch_loop+1, avg_loss / 60000);
         fprintf(fp, "epoch%d,%f,", epoch_loop+1, avg_loss / 60000);
