@@ -14,20 +14,20 @@
 #define n_of_second_hidden_layer 256
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.01
+#define learning_rate 0.005
 #define batch_size 32
-#define epoch 10
+#define epoch 30
 #define debug 1
 #define neck_check 0
 #define threaded 0
-#define L2_regularization 1
-#define regularization_rate 0.0001
-#define dropout 0
+#define L2_regularization 0
+#define regularization_rate 0.0005
+#define dropout 1
 #define dropout_rate 0.5
-#define train_images "train-images.idx3-ubyte"
-#define train_labels "train-labels.idx1-ubyte"
-#define test_images "t10k-images.idx3-ubyte"
-#define test_labels "t10k-labels.idx1-ubyte"
+#define train_images "train-images-fashion.idx3-ubyte"
+#define train_labels "train-labels-fashion.idx1-ubyte"
+#define test_images "t10k-images-fashion.idx3-ubyte"
+#define test_labels "t10k-labels-fashion.idx1-ubyte"
 
 typedef struct {
     //buffer
@@ -835,7 +835,7 @@ int main (void){
             mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
             add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
             relu(z1, first_hidden_layer, n_of_first_hidden_layer);
-            if (dropout == 1); {apply_dropout(first_hidden_layer, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
+            if (dropout == 1) {apply_dropout(first_hidden_layer, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
 
             mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
             add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
