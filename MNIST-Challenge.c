@@ -13,18 +13,18 @@
 #define n_of_second_hidden_layer 256
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.003
+#define learning_rate 0.002
 #define batch_size 32
-#define epoch 20
+#define epoch 10
 #define debug 1
 #define neck_check 0
 #define threaded 0
 #define L2_regularization 1
 #define regularization_rate 0.0005
-#define train_images "train-images-fashion.idx3-ubyte"
-#define train_labels "train-labels-fashion.idx1-ubyte"
-#define test_images "t10k-images-fashion.idx3-ubyte"
-#define test_labels "t10k-labels-fashion.idx1-ubyte"
+#define train_images "train-images.idx3-ubyte"
+#define train_labels "train-labels.idx1-ubyte"
+#define test_images "t10k-images.idx3-ubyte"
+#define test_labels "t10k-labels.idx1-ubyte"
 
 typedef struct {
     //buffer
