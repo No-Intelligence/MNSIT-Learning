@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdbool.h>
 
 #define PI 3.14159265358979
 #define n_of_input_layer 784
@@ -13,22 +14,16 @@
 #define n_of_second_hidden_layer 256
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
-<<<<<<< HEAD
-#define learning_rate 0.002
-=======
-#define learning_rate 0.004
->>>>>>> 13a0b7eff81d05bf880269212c1a51bad27d886f
+#define learning_rate 0.01
 #define batch_size 32
 #define epoch 10
 #define debug 1
 #define neck_check 0
 #define threaded 0
 #define L2_regularization 1
-<<<<<<< HEAD
-#define regularization_rate 0.0005
-=======
-#define regularization_rate 0.001
->>>>>>> 13a0b7eff81d05bf880269212c1a51bad27d886f
+#define regularization_rate 0.0001
+#define dropout 0
+#define dropout_rate 0.5
 #define train_images "train-images.idx3-ubyte"
 #define train_labels "train-labels.idx1-ubyte"
 #define test_images "t10k-images.idx3-ubyte"
@@ -114,6 +109,30 @@ void free_workspace (thread_workspace_t *p, int n_threads) {
         free(p[i].grad_w1t); free(p[i].grad_w2t); free(p[i].grad_w3t); free(p[i].grad_w4t); free(p[i].grad_b1t); free(p[i].grad_b2t); free(p[i].grad_b3t); free(p[i].grad_b4t);
     }
     free(p);
+}
+
+void apply_dropout (float *operated_arr, bool *mask, int batch, int n_of_arr) {
+    for (size_t i = 0; i < n_of_arr; i++)
+    {
+        operated_arr[i] = operated_arr[i] * mask[n_of_arr * batch + i] / (1 - dropout_rate);
+    }
+    
+}
+
+void generate_dropout_mask (bool *dropout_mask, int number_of_mask) {
+    srand(time(NULL));
+    for (size_t i = 0; i < number_of_mask; i++)
+    {
+        if ((float)(rand())/RAND_MAX <= dropout_rate)
+        {
+            dropout_mask[i] = 0;
+        }
+        else
+        {
+            dropout_mask[i] = 1;
+        }
+    }
+    
 }
 
 void add_weight (float *grad, float *weight, int n_of_grad) {
@@ -263,6 +282,7 @@ void compute_output_delta (float *output, float *output_layer, float *answer_arr
     for (int i = 0; i < n_of_arr; i++) {
         output[i] = output_layer[i] - answer_arr[i];
     }
+    
 }
 
 void weight_grad (float *z_delta, float *previous_activation_arr, float *output_arr, int n_of_output, int n_of_input){
@@ -539,6 +559,9 @@ int main (void){
     grad_to_b2t = (float*)malloc(n_of_second_hidden_layer * sizeof(float));
     grad_to_b1t = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
     thread_workspace_t *ws = alloc_workspace(4);
+    bool *dropout_mask_for_first_hidden_layer = malloc(n_of_first_hidden_layer * (60000/batch_size));
+    bool *dropout_mask_for_second_hidden_layer = malloc(n_of_second_hidden_layer * (60000/batch_size));
+    bool *dropout_mask_for_third_hidden_layer = malloc(n_of_third_hidden_layer * (60000/batch_size));
 
     //file
     FILE *learning_data_images, *learning_data_labels, *test_data_images, *test_data_labels, *fp;
@@ -785,12 +808,18 @@ int main (void){
         }
         else {
             start = clock();
+            int batch = 0;
             uint8_t *training_image_buffer = malloc(60000 * 784 * sizeof(uint8_t));
             uint8_t *training_label_buffer = malloc(60000 * sizeof(uint8_t));
             fseek(learning_data_images, 16, SEEK_SET);
             fread(training_image_buffer, sizeof(uint8_t), 60000 * 784, learning_data_images);
             fseek(learning_data_labels, 8, SEEK_SET);
             fread(training_label_buffer, sizeof(uint8_t), 60000, learning_data_labels);
+
+            generate_dropout_mask(dropout_mask_for_first_hidden_layer, n_of_first_hidden_layer * (60000/batch_size));
+            generate_dropout_mask(dropout_mask_for_second_hidden_layer, n_of_second_hidden_layer * (60000/batch_size));
+            generate_dropout_mask(dropout_mask_for_third_hidden_layer, n_of_third_hidden_layer * (60000/batch_size));
+
             for (int loop = 0; loop < 60000; loop++){
             if (!(loop%1000) && debug) {printf("%d datas have been processed.\n", loop);}
 
@@ -806,14 +835,17 @@ int main (void){
             mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
             add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
             relu(z1, first_hidden_layer, n_of_first_hidden_layer);
+            if (dropout == 1); {apply_dropout(first_hidden_layer, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
 
             mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
             add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
             relu(z2, second_hidden_layer, n_of_second_hidden_layer);
+            if (dropout == 1) {apply_dropout(second_hidden_layer, dropout_mask_for_second_hidden_layer, batch, n_of_second_hidden_layer);}
 
             mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
             add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
             relu(z3, third_hidden_layer, n_of_third_hidden_layer);
+            if (dropout == 1) {apply_dropout(third_hidden_layer, dropout_mask_for_third_hidden_layer, batch, n_of_third_hidden_layer);}
 
             mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
             add_bias(zout, bias_of_output_layer, n_of_output_layer);
@@ -840,37 +872,28 @@ int main (void){
             compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
 
             weight_grad(delta_4, third_hidden_layer, grad_to_w4, n_of_output_layer, n_of_third_hidden_layer);
-            if (L2_regularization)
-            {
-                add_weight(grad_to_w4, weight_to_output_layer, n_of_output_layer * n_of_third_hidden_layer);
-            }
+            if (L2_regularization) {add_weight(grad_to_w4, weight_to_output_layer, n_of_output_layer * n_of_third_hidden_layer);}
             grad_bias(delta_4, grad_to_b4, n_of_output_layer);
 
             compute_hidden_delta(delta_4, weight_to_output_layer, z3, delta_3, n_of_third_hidden_layer, n_of_output_layer);
+            if (dropout == 1) {apply_dropout(delta_3, dropout_mask_for_third_hidden_layer, batch, n_of_third_hidden_layer);}
 
             weight_grad(delta_3, second_hidden_layer, grad_to_w3, n_of_third_hidden_layer, n_of_second_hidden_layer);
-            if (L2_regularization)
-            {
-                add_weight(grad_to_w3, weight_to_third_hidden_layer, n_of_third_hidden_layer * n_of_second_hidden_layer);
-            }
+            if (L2_regularization) {add_weight(grad_to_w3, weight_to_third_hidden_layer, n_of_third_hidden_layer * n_of_second_hidden_layer);}
             grad_bias(delta_3, grad_to_b3, n_of_third_hidden_layer);
 
             compute_hidden_delta(delta_3, weight_to_third_hidden_layer, z2, delta_2, n_of_second_hidden_layer, n_of_third_hidden_layer);
+            if (dropout == 1) {apply_dropout(delta_2, dropout_mask_for_second_hidden_layer, batch, n_of_second_hidden_layer);}
 
             weight_grad(delta_2, first_hidden_layer, grad_to_w2, n_of_second_hidden_layer, n_of_first_hidden_layer);
-            if (L2_regularization)
-            {
-                add_weight(grad_to_w2, weight_to_second_hidden_layer, n_of_second_hidden_layer * n_of_first_hidden_layer);
-            }
+            if (L2_regularization) {add_weight(grad_to_w2, weight_to_second_hidden_layer, n_of_second_hidden_layer * n_of_first_hidden_layer);}
             grad_bias(delta_2, grad_to_b2, n_of_second_hidden_layer);
 
             compute_hidden_delta(delta_2, weight_to_second_hidden_layer, z1, delta_1, n_of_first_hidden_layer, n_of_second_hidden_layer);
+            if (dropout == 1) {apply_dropout(delta_1, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
 
             weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
-            if (L2_regularization)
-            {
-                add_weight(grad_to_w1, weight_to_first_hidden_layer, n_of_first_hidden_layer * n_of_input_layer);
-            }
+            if (L2_regularization) {add_weight(grad_to_w1, weight_to_first_hidden_layer, n_of_first_hidden_layer * n_of_input_layer);}
             grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
 
             for (int i = 0; i < n_of_first_hidden_layer; i++){
@@ -937,6 +960,7 @@ int main (void){
                 for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
                     grad_to_w4t[i] = 0.0f;
                 }
+                batch++;
             }
         }
         end = clock();
@@ -1087,6 +1111,9 @@ int main (void){
     free(grad_to_w2t);
     free(grad_to_w3t);
     free(grad_to_w4t);
+    free(dropout_mask_for_first_hidden_layer);
+    free(dropout_mask_for_second_hidden_layer);
+    free(dropout_mask_for_third_hidden_layer);
     input_layer = NULL;
     first_hidden_layer = NULL;
     second_hidden_layer = NULL;
