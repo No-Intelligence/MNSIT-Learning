@@ -13,18 +13,18 @@
 #define n_of_second_hidden_layer 256
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.003
+#define learning_rate 0.004
 #define batch_size 32
 #define epoch 20
 #define debug 1
 #define neck_check 0
 #define threaded 0
 #define L2_regularization 1
-#define regularization_rate 0.0005
-#define train_images "train-images-fashion.idx3-ubyte"
-#define train_labels "train-labels-fashion.idx1-ubyte"
-#define test_images "t10k-images-fashion.idx3-ubyte"
-#define test_labels "t10k-labels-fashion.idx1-ubyte"
+#define regularization_rate 0.001
+#define train_images "train-images.idx3-ubyte"
+#define train_labels "train-labels.idx1-ubyte"
+#define test_images "t10k-images.idx3-ubyte"
+#define test_labels "t10k-labels.idx1-ubyte"
 
 typedef struct {
     //buffer
@@ -1000,6 +1000,46 @@ int main (void){
         fseek(test_data_labels, -10000, SEEK_CUR);
     }
 
+    //save weight
+    FILE *weight;
+    weight = fopen("weight.bin", "w");
+    if (weight == NULL)
+    {
+        return 0;
+    }
+    for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
+    {
+        fprintf(weight, "%f\n", weight_to_first_hidden_layer[i]);
+    }
+    for (size_t i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++)
+    {
+        fprintf(weight, "%f\n", weight_to_second_hidden_layer[i]);
+    }
+    for (size_t i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++)
+    {
+        fprintf(weight, "%f\n", weight_to_third_hidden_layer[i]);
+    }
+    for (size_t i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++)
+    {
+        fprintf(weight, "%f\n", weight_to_output_layer[i]);
+    }
+    for (size_t i = 0; i < n_of_first_hidden_layer; i++)
+    {
+        fprintf(weight,"%f\n", bias_of_first_hidden_layer[i]);
+    }
+    for (size_t i = 0; i < n_of_second_hidden_layer; i++)
+    {
+        fprintf(weight,"%f\n", bias_of_second_hidden_layer[i]);
+    }
+    for (size_t i = 0; i < n_of_third_hidden_layer; i++)
+    {
+        fprintf(weight,"%f\n", bias_of_third_hidden_layer[i]);
+    }
+    for (size_t i = 0; i < n_of_output_layer; i++)
+    {
+        fprintf(weight,"%f\n", bias_of_output_layer[i]);
+    }
+    fclose(weight);
 
     //end
     free(input_layer);
