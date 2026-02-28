@@ -14,13 +14,13 @@
 #define n_of_second_hidden_layer 256
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.005
+#define learning_rate 0.001
 #define batch_size 32
-#define epoch 30
+#define epoch 1
 #define debug 1
-#define neck_check 0
+#define neck_check 1
 #define threaded 0
-#define L2_regularization 0
+#define L2_regularization 1
 #define regularization_rate 0.0005
 #define dropout 1
 #define dropout_rate 0.5
