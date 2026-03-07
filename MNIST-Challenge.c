@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <immintrin.h>
 
 #define PI 3.14159265358979
 #define n_of_input_layer 784
@@ -15,10 +16,10 @@
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
 #define learning_rate 0.001
-#define batch_size 160
-#define epoch 15
+#define batch_size 32
+#define epoch 10
 #define debug 1
-#define neck_check 0
+#define neck_check 1
 #define threaded 0
 #define L2_regularization 1
 #define regularization_rate 0.0005
@@ -197,6 +198,23 @@ void add_bias (float *operated_arr, float *input_bias, int n_of_arr){
     
 }
 
+void vec_add_avx (const float *a, const float *b, float *c, int n) {
+    __m256 va, vb, vc;
+
+    for (size_t i = 0; i < n / 8; i++) {   
+        va = _mm256_loadu_ps(&a[8*i]);
+        vb = _mm256_loadu_ps(&b[8*i]);
+
+        vc = _mm256_add_ps(va, vb);
+
+        _mm256_storeu_ps(&c[8*i], vc);    
+    }
+
+    for (size_t i = 0; i < n % 8; i++) {
+        c[(n / 8) * 8 + i] = a[(n / 8) * 8 + i] + b[(n / 8) * 8 + i];
+    }        
+}
+
 int mmul (float *output_arr, float *input_arr, float *matrix, int n_of_output_arr, int n_of_input_arr){
     for (int i = 0; i < n_of_output_arr; i++)
     {
@@ -213,6 +231,39 @@ int mmul (float *output_arr, float *input_arr, float *matrix, int n_of_output_ar
     }
 
     return 0;
+}
+
+float dot_product (const float *a, const float *b, int n) {
+    __m256 va, vb, vc;
+    float sum = 0.0f;
+    float tmp[8];
+
+    for (size_t i = 0; i < n / 8; i++) {   
+        va = _mm256_loadu_ps(&a[8*i]);
+        vb = _mm256_loadu_ps(&b[8*i]);
+
+        vc = _mm256_mul_ps(va, vb);
+
+        _mm256_storeu_ps(tmp, vc);
+        for (size_t j = 0; j < 8; j++)
+        {
+            sum += tmp[j];
+        }
+          
+    }
+
+    for (size_t i = (n / 8) * 8; i < n; i++) {
+        sum += a[i] * b[i];
+    }
+    return sum;
+}
+
+void mat_vec_mul(const float *A, const float *x, float *y, int M, int N) {
+    for (size_t i = 0; i < M; i++)
+    {
+        y[i] = dot_product(&A[N*i], x, N);
+    }
+    
 }
 
 float extract_max (float *input_array, int n_of_input_arr){
@@ -885,23 +936,31 @@ int main (void){
             answer = training_label_buffer[order_indices[loop]];
 
             //forward pass
-            mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
-            add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
+            //mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
+            mat_vec_mul(weight_to_first_hidden_layer, input_layer, z1, n_of_first_hidden_layer, n_of_input_layer);
+            //add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
+            vec_add_avx(z1, bias_of_first_hidden_layer, z1, n_of_first_hidden_layer);
             relu(z1, first_hidden_layer, n_of_first_hidden_layer);
             if (dropout == 1) {apply_dropout(first_hidden_layer, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
 
-            mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
-            add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
+            //mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
+            mat_vec_mul(weight_to_second_hidden_layer, first_hidden_layer, z2, n_of_second_hidden_layer, n_of_first_hidden_layer);
+            //add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
+            vec_add_avx(z2, bias_of_second_hidden_layer, z2, n_of_second_hidden_layer);
             relu(z2, second_hidden_layer, n_of_second_hidden_layer);
             if (dropout == 1) {apply_dropout(second_hidden_layer, dropout_mask_for_second_hidden_layer, batch, n_of_second_hidden_layer);}
 
-            mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
-            add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
+            //mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
+            mat_vec_mul(weight_to_third_hidden_layer, second_hidden_layer, z3, n_of_third_hidden_layer, n_of_second_hidden_layer);
+            //add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
+            vec_add_avx(z3, bias_of_third_hidden_layer, z3, n_of_third_hidden_layer);
             relu(z3, third_hidden_layer, n_of_third_hidden_layer);
             if (dropout == 1) {apply_dropout(third_hidden_layer, dropout_mask_for_third_hidden_layer, batch, n_of_third_hidden_layer);}
 
-            mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
-            add_bias(zout, bias_of_output_layer, n_of_output_layer);
+            //mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
+            mat_vec_mul(weight_to_output_layer, third_hidden_layer, zout, n_of_output_layer, n_of_third_hidden_layer);
+            //add_bias(zout, bias_of_output_layer, n_of_output_layer);
+            vec_add_avx(zout, bias_of_output_layer, zout, n_of_output_layer);
             softmax(zout, output_layer, n_of_output_layer);
 
             //loss function (cross entropy)
