@@ -16,18 +16,19 @@
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
 #define learning_rate 0.001
-#define batch_size 32
-#define epoch 10
+#define batch_size 160
+#define epoch 30
 #define debug 1
-#define neck_check 1
+#define neck_check 0
 #define threaded 0
 #define L2_regularization 1
-#define regularization_rate 0.0005
+#define regularization_rate 0.001f
 #define dropout 1
-#define dropout_rate 0.25f
+#define dropout_rate 0.5f
 #define adam_beta1 0.9f
 #define adam_beta2 0.999f
 #define adam_epsilon 1e-8f
+#define avx2 false
 #define train_images "train-images.idx3-ubyte"
 #define train_labels "train-labels.idx1-ubyte"
 #define test_images "t10k-images.idx3-ubyte"
@@ -234,24 +235,23 @@ int mmul (float *output_arr, float *input_arr, float *matrix, int n_of_output_ar
 }
 
 float dot_product (const float *a, const float *b, int n) {
-    __m256 va, vb, vc;
-    float sum = 0.0f;
-    float tmp[8];
+    __m256 va, vb, sum_vec = _mm256_setzero_ps();
 
-    for (size_t i = 0; i < n / 8; i++) {   
+    for (size_t i = 0; i < n / 8; i++) {
         va = _mm256_loadu_ps(&a[8*i]);
         vb = _mm256_loadu_ps(&b[8*i]);
-
-        vc = _mm256_mul_ps(va, vb);
-
-        _mm256_storeu_ps(tmp, vc);
-        for (size_t j = 0; j < 8; j++)
-        {
-            sum += tmp[j];
-        }
-          
+        sum_vec = _mm256_fmadd_ps(va, vb, sum_vec);
     }
 
+    // Horizontal reduction of sum_vec
+    __m128 low = _mm256_castps256_ps128(sum_vec);
+    __m128 high = _mm256_extractf128_ps(sum_vec, 1);
+    __m128 sum128 = _mm_add_ps(low, high);
+    sum128 = _mm_hadd_ps(sum128, sum128);
+    sum128 = _mm_hadd_ps(sum128, sum128);
+    float sum = _mm_cvtss_f32(sum128);
+
+    // Handle remaining elements
     for (size_t i = (n / 8) * 8; i < n; i++) {
         sum += a[i] * b[i];
     }
@@ -936,31 +936,47 @@ int main (void){
             answer = training_label_buffer[order_indices[loop]];
 
             //forward pass
-            //mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
-            mat_vec_mul(weight_to_first_hidden_layer, input_layer, z1, n_of_first_hidden_layer, n_of_input_layer);
-            //add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
-            vec_add_avx(z1, bias_of_first_hidden_layer, z1, n_of_first_hidden_layer);
+            if (avx2 == true) {
+                mat_vec_mul(weight_to_first_hidden_layer, input_layer, z1, n_of_first_hidden_layer, n_of_input_layer);
+                vec_add_avx(z1, bias_of_first_hidden_layer, z1, n_of_first_hidden_layer);
+            }
+            else {
+                mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
+                add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
+            }
             relu(z1, first_hidden_layer, n_of_first_hidden_layer);
             if (dropout == 1) {apply_dropout(first_hidden_layer, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
 
-            //mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
-            mat_vec_mul(weight_to_second_hidden_layer, first_hidden_layer, z2, n_of_second_hidden_layer, n_of_first_hidden_layer);
-            //add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
-            vec_add_avx(z2, bias_of_second_hidden_layer, z2, n_of_second_hidden_layer);
+            if (avx2 == true) {
+                mat_vec_mul(weight_to_second_hidden_layer, first_hidden_layer, z2, n_of_second_hidden_layer, n_of_first_hidden_layer);
+                vec_add_avx(z2, bias_of_second_hidden_layer, z2, n_of_second_hidden_layer);
+            }
+            else {
+                mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
+                add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
+            }
             relu(z2, second_hidden_layer, n_of_second_hidden_layer);
             if (dropout == 1) {apply_dropout(second_hidden_layer, dropout_mask_for_second_hidden_layer, batch, n_of_second_hidden_layer);}
 
-            //mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
-            mat_vec_mul(weight_to_third_hidden_layer, second_hidden_layer, z3, n_of_third_hidden_layer, n_of_second_hidden_layer);
-            //add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
-            vec_add_avx(z3, bias_of_third_hidden_layer, z3, n_of_third_hidden_layer);
+            if (avx2 == true) {
+                mat_vec_mul(weight_to_third_hidden_layer, second_hidden_layer, z3, n_of_third_hidden_layer, n_of_second_hidden_layer);
+                vec_add_avx(z3, bias_of_third_hidden_layer, z3, n_of_third_hidden_layer);
+            }
+            else {
+                mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
+                add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
+            }
             relu(z3, third_hidden_layer, n_of_third_hidden_layer);
             if (dropout == 1) {apply_dropout(third_hidden_layer, dropout_mask_for_third_hidden_layer, batch, n_of_third_hidden_layer);}
 
-            //mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
-            mat_vec_mul(weight_to_output_layer, third_hidden_layer, zout, n_of_output_layer, n_of_third_hidden_layer);
-            //add_bias(zout, bias_of_output_layer, n_of_output_layer);
-            vec_add_avx(zout, bias_of_output_layer, zout, n_of_output_layer);
+            if (avx2 == true) {
+                mat_vec_mul(weight_to_output_layer, third_hidden_layer, zout, n_of_output_layer, n_of_third_hidden_layer);
+                vec_add_avx(zout, bias_of_output_layer, zout, n_of_output_layer);
+            }
+            else {
+                mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
+                add_bias(zout, bias_of_output_layer, n_of_output_layer);
+            }
             softmax(zout, output_layer, n_of_output_layer);
 
             //loss function (cross entropy)

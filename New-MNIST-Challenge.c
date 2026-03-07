@@ -7,15 +7,15 @@
 #include <stdint.h>
 
 #define num_input_units 10
-#define number_of_layers_setting 4  
+#define number_of_layers_setting 3
 #define loss_function_setting cross_ententropy
 #define learning_rate_setting 0.001
 #define batch_size_setting 32
 #define epoch_setting 10
 #define regularization_rate_setting 0.0001
 #define dropout_rate_setting 0.5
-#define layer_construction_setting {512, 256, 128, 10}
-#define activation_function_setting {relu, relu, relu, softmax}
+#define layer_construction_setting {256, 128, 10}
+#define activation_function_setting {relu, relu, softmax}
 
 typedef enum {
     relu,
@@ -90,7 +90,32 @@ void free_network (network_t *temporary_internal_net, int num_layers) {
     free(temporary_internal_net);
 }
 
-void weight_initialization (network_t *temporary_internal_net, )
+int load_MNIST_format_image (char filename, int num, float *buffer) {
+    FILE *fp;
+    fp = fopen(filename, "rb");
+    if (fp == NULL) return 1;
+    fseek(fp, 16, SEEK_SET);
+    for (size_t i = 0; i < 784 * num; i++)
+    {
+        buffer[i] = fgetc(fp)/255.0f;
+    }
+    fclose(fp);
+    return 0;
+}
+
+int load_MNIST_format_label (char filename, int num, uint8_t *buffer) {
+    FILE *fp;
+    fp = fopen(filename, "rb");
+    if (fp == NULL) return 1;
+    fseek(fp, 8, SEEK_SET);
+    fread(buffer, sizeof(uint8_t), num, fp);
+    fclose(fp);
+    return 0;
+}
+
+void weight_initialization (network_t *temporary_internal_net) {
+
+}
 
 int main(int argc, char const *argv[])
 {
