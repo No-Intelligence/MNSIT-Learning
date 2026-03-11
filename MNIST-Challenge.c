@@ -15,24 +15,45 @@
 #define n_of_second_hidden_layer 256
 #define n_of_third_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.001
+#define learning_rate 0.0001
 #define batch_size 160
-#define epoch 30
+#define epoch 20
 #define debug 1
 #define neck_check 0
 #define threaded 0
 #define L2_regularization 1
-#define regularization_rate 0.001f
-#define dropout 1
-#define dropout_rate 0.5f
+#define regularization_rate 0.0005f
+#define dropout 0
+#define dropout_rate 0.3f
+#define adam true
 #define adam_beta1 0.9f
 #define adam_beta2 0.999f
 #define adam_epsilon 1e-8f
 #define avx2 false
+
+//convolutional layer param
+#define filter_hight 3
+#define filter_width 3
+#define n_of_first_channel 32
+#define n_of_second_channel 64
+
 #define train_images "train-images.idx3-ubyte"
 #define train_labels "train-labels.idx1-ubyte"
 #define test_images "t10k-images.idx3-ubyte"
 #define test_labels "t10k-labels.idx1-ubyte"
+
+typedef struct {
+    float *layer;
+    int *mask;
+} maxpool_layer_t;
+
+typedef struct {
+    float *filter;
+} conv_filter_t;
+
+typedef struct {
+    float *layer;
+} conv_layer_t;
 
 typedef struct {
     //buffer
@@ -54,6 +75,59 @@ typedef struct {
     //gradient total
     float *grad_w1t, *grad_w2t, *grad_w3t, *grad_w4t, *grad_b1t, *grad_b2t, *grad_b3t, *grad_b4t;
 } thread_workspace_t;
+
+maxpool_layer_t* alloc_maxpool_layer (int n_channels, int h, int w) {
+    maxpool_layer_t *p = calloc(n_channels, sizeof(maxpool_layer_t));
+    for (size_t i = 0; i < n_channels; i++)
+    {
+        p[i].layer = malloc(h * w * sizeof(float));
+        p[i].mask = malloc(h * w * sizeof(int));
+    }
+    return p;
+}
+
+void free_maxpool_layer (maxpool_layer_t *p, int n_channels) {
+    for (size_t i = 0; i < n_channels; i++)
+    {
+        free(p[i].layer);
+        free(p[i].mask);
+    }
+    free(p);
+}
+
+conv_filter_t* alloc_filter (int n_filters) {
+    conv_filter_t *tmp_filter = calloc(n_filters, sizeof(conv_filter_t));
+    for (size_t i = 0; i < n_filters; i++)
+    {
+        tmp_filter[i].filter = malloc(filter_hight * filter_width * sizeof(float));
+    }
+    return tmp_filter;
+}
+
+void free_filter (conv_filter_t *tmp_filter, int n_filters) {
+    for (size_t i = 0; i < n_filters; i++)
+    {
+        free(tmp_filter[i].filter);
+    }
+    free(tmp_filter);
+}
+
+conv_layer_t* alloc_conv_layer (int n_images, int image_hight, int image_width) {
+    conv_layer_t *tmp_layer = calloc(n_images, sizeof(conv_layer_t));
+    for (size_t i = 0; i < n_images; i++)
+    {
+        tmp_layer[i].layer = malloc(image_hight * image_width * sizeof(float));
+    }
+    return tmp_layer;
+}
+
+void free_conv_layer (conv_layer_t *tmp_layer, int n_images) {
+    for (size_t i = 0; i < n_images; i++)
+    {
+        free(tmp_layer[i].layer);
+    }
+    free(tmp_layer);
+}
 
 thread_workspace_t* alloc_workspace (int n_threads) {
     thread_workspace_t *p = calloc(n_threads, sizeof(thread_workspace_t));
@@ -468,6 +542,145 @@ int find_max_index (float *arr, int size){
     }
     
     return max_index;
+}
+
+void convolution_single_to_multi (float *input_layer, conv_filter_t *f, conv_layer_t *l, int n_input_hight, int n_input_width, int n_output_channel) {
+    //standby
+    int output_hight = n_input_hight - filter_hight + 1;    //もとの高さとフィルターの高さから畳み込み後の高さを計算
+    int output_width = n_input_width - filter_width + 1;    //もとの幅とフィルターの幅から畳み込み後の幅を計算
+    conv_filter_t* conv_filter = f;
+    conv_layer_t* conv_layer = l;
+
+    //zero fill
+    for (size_t i = 0; i < n_output_channel; i++)
+    {
+        for (size_t j = 0; j < output_hight * output_width; j++)
+        {
+            conv_layer[i].layer[j] = 0.0f;
+        }
+        
+    }
+    
+    for (size_t oc = 0; oc < n_output_channel; oc++)
+    {
+        for (size_t oh = 0; oh < output_hight; oh++)
+        {
+            for (size_t ow = 0; ow < output_width; ow++)
+            {
+                for (size_t kh = 0; kh < filter_hight; kh++)
+                {
+                    for (size_t kw = 0; kw < filter_width; kw++)
+                    {
+                        conv_layer[oc].layer[output_width * oh +  ow] += conv_filter[oc].filter[filter_width * kh + kw] * input_layer[n_input_width * oh + ow + n_input_width * kh + kw];
+                    }
+                    
+                }
+                
+            }
+            
+        }
+        
+    }
+    
+}
+
+void convolution_multi_to_multi (conv_layer_t *input, conv_filter_t *filter, conv_layer_t *output, int n_input_hight, int n_input_width, int n_input_channel, int n_output_channel) {
+    //standby
+    int n_output_hight = n_input_hight - filter_hight + 1;
+    int n_output_width = n_input_width - filter_width + 1;
+
+    //zero fill
+    for (size_t i = 0; i < n_output_channel; i++)
+    {
+        for (size_t j = 0; j < n_output_hight * n_output_width; j++)
+        {
+            output[i].layer[j] = 0.0f;
+        }
+        
+    }
+
+    for (size_t oc = 0; oc < n_output_channel; oc++)
+    {
+        for (size_t ic = 0; ic < n_input_channel; ic++)
+        {
+            for (size_t oh = 0; oh < n_output_hight; oh++)
+            {
+                for (size_t ow = 0; ow < n_output_width; ow++)
+                {
+                    for (size_t kh = 0; kh < filter_hight; kh++)
+                    {
+                        for (size_t kw = 0; kw < filter_width; kw++)
+                        {
+                            output[oc].layer[n_output_width * oh + ow] += filter[n_input_channel * oc + ic].filter[filter_width * kh + kw] * input[ic].layer[n_input_width * kh  + n_input_width * oh + kw + ow];
+                        }
+                        
+                    }
+                    
+                }
+                
+            }
+            
+        }
+        
+    }
+    
+}
+
+void maxpool(conv_layer_t *input, maxpool_layer_t *output, int channels, int in_h, int in_w, int pool_size) {
+    //standby
+    int out_h = in_h / pool_size;
+    int out_w = in_w / pool_size;
+
+    for (size_t c = 0; c < channels; c++)
+    {
+        for (size_t oh = 0; oh < out_h; oh++)
+        {
+            for (size_t ow = 0; ow < out_w; ow++)
+            {
+                float max = -__FLT_MAX__;
+                int max_indics;
+                for (size_t kh = 0; kh < pool_size; kh++)
+                {
+                    for (size_t kw = 0; kw < pool_size; kw++)
+                    {
+                        float value = input[c].layer[(oh*pool_size+kh)*in_w + (ow*pool_size+kw)];
+                        if (value > max)
+                        {
+                            max = value;
+                            max_indics = pool_size * kh + kw;
+                        }
+                        
+                    }
+                    
+                }
+                output[c].layer[out_w * oh + ow] = max;
+                output[c].mask[out_w * oh + ow] = max_indics;
+            }
+            
+        }
+        
+    }
+    
+}
+
+void maxpool_backward(maxpool_layer_t *d_output, conv_layer_t *d_input, maxpool_layer_t *mask_store, int n_channels, int in_h, int in_w, int pool_size) {
+    int out_h = in_h / pool_size;
+    int out_w = in_w / pool_size;
+
+    // d_inputをゼロ初期化
+    for (int c = 0; c < n_channels; c++)
+        memset(d_input[c].layer, 0, in_h * in_w * sizeof(float));
+
+    for (int c = 0; c < n_channels; c++)
+        for (int oh = 0; oh < out_h; oh++)
+            for (int ow = 0; ow < out_w; ow++) {
+                int idx = mask_store[c].mask[oh * out_w + ow];
+                int kh  = idx / pool_size;
+                int kw  = idx % pool_size;
+                // max位置だけに勾配を流す
+                d_input[c].layer[(oh*pool_size+kh)*in_w + (ow*pool_size+kw)]
+                    += d_output[c].layer[oh * out_w + ow];
+            }
 }
 
 void* training_threaded (void* arg){
@@ -1060,16 +1273,19 @@ int main (void){
                 for (size_t i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++) grad_to_w3t[i] /= batch_size;
                 for (size_t i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++) grad_to_w4t[i] /= batch_size;
                 
-                /*update_params(weight_to_first_hidden_layer, grad_to_w1t, bias_of_first_hidden_layer, grad_to_b1t, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
-                update_params(weight_to_second_hidden_layer, grad_to_w2t, bias_of_second_hidden_layer, grad_to_b2t, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
-                update_params(weight_to_third_hidden_layer, grad_to_w3t, bias_of_third_hidden_layer, grad_to_b3t, n_of_second_hidden_layer * n_of_third_hidden_layer, n_of_third_hidden_layer);
-                update_params(weight_to_output_layer, grad_to_w4t, bias_of_output_layer, grad_to_b4t, n_of_third_hidden_layer * n_of_output_layer, n_of_output_layer);*/
-
-                adam_t++;
-                adam_update(weight_to_first_hidden_layer, grad_to_w1t, m_w1, v_w1, n_of_input_layer * n_of_first_hidden_layer, bias_of_first_hidden_layer, grad_to_b1t, m_b1, v_b1, n_of_first_hidden_layer, adam_t);
-                adam_update(weight_to_second_hidden_layer, grad_to_w2t, m_w2, v_w2, n_of_first_hidden_layer * n_of_second_hidden_layer, bias_of_second_hidden_layer, grad_to_b2t, m_b2, v_b2, n_of_second_hidden_layer, adam_t);
-                adam_update(weight_to_third_hidden_layer, grad_to_w3t, m_w3, v_w3, n_of_second_hidden_layer * n_of_third_hidden_layer, bias_of_third_hidden_layer, grad_to_b3t, m_b3, v_b3, n_of_third_hidden_layer, adam_t);
-                adam_update(weight_to_output_layer, grad_to_w4t, m_w4, v_w4, n_of_third_hidden_layer * n_of_output_layer, bias_of_output_layer, grad_to_b4t, m_b4, v_b4, n_of_output_layer, adam_t);
+                if (adam == false) {
+                    update_params(weight_to_first_hidden_layer, grad_to_w1t, bias_of_first_hidden_layer, grad_to_b1t, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
+                    update_params(weight_to_second_hidden_layer, grad_to_w2t, bias_of_second_hidden_layer, grad_to_b2t, n_of_first_hidden_layer * n_of_second_hidden_layer, n_of_second_hidden_layer);
+                    update_params(weight_to_third_hidden_layer, grad_to_w3t, bias_of_third_hidden_layer, grad_to_b3t, n_of_second_hidden_layer * n_of_third_hidden_layer, n_of_third_hidden_layer);
+                    update_params(weight_to_output_layer, grad_to_w4t, bias_of_output_layer, grad_to_b4t, n_of_third_hidden_layer * n_of_output_layer, n_of_output_layer);
+                }
+                else {
+                    adam_t++;
+                    adam_update(weight_to_first_hidden_layer, grad_to_w1t, m_w1, v_w1, n_of_input_layer * n_of_first_hidden_layer, bias_of_first_hidden_layer, grad_to_b1t, m_b1, v_b1, n_of_first_hidden_layer, adam_t);
+                    adam_update(weight_to_second_hidden_layer, grad_to_w2t, m_w2, v_w2, n_of_first_hidden_layer * n_of_second_hidden_layer, bias_of_second_hidden_layer, grad_to_b2t, m_b2, v_b2, n_of_second_hidden_layer, adam_t);
+                    adam_update(weight_to_third_hidden_layer, grad_to_w3t, m_w3, v_w3, n_of_second_hidden_layer * n_of_third_hidden_layer, bias_of_third_hidden_layer, grad_to_b3t, m_b3, v_b3, n_of_third_hidden_layer, adam_t);
+                    adam_update(weight_to_output_layer, grad_to_w4t, m_w4, v_w4, n_of_third_hidden_layer * n_of_output_layer, bias_of_output_layer, grad_to_b4t, m_b4, v_b4, n_of_output_layer, adam_t);
+                }
 
                 for (int i = 0; i < n_of_first_hidden_layer; i++){
                     grad_to_b1t[i] = 0.0f;
