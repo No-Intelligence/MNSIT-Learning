@@ -728,7 +728,19 @@ void flatten(float *output_arr, maxpool_layer_t *input_conv_layer, int in_channe
 
 }
 
-void unflatten () {
+void unflatten (maxpool_layer_t *output_layer, float *input_arr, int c, int in_h, int in_w) {
+    for (size_t channel = 0; channel < c;channel++)
+    {
+        for (size_t h = 0; h < in_h; h++)
+        {
+            for (size_t w = 0; w < in_w; w++)
+            {
+                output_layer[channel].layer[in_w * h + w] = input_arr[in_h * in_w *  channel +  in_w * h + w];
+            }
+            
+        }
+        
+    }
     
 }
 
@@ -746,6 +758,10 @@ void add_bias_conv (conv_layer_t *layer, float *bias, int in_channel, int in_hig
         
     }
     
+}
+
+void backward_relu (float *output_arr, float *input_arr, float ) {
+
 }
 
 void* training_threaded (void* arg){
@@ -896,6 +912,8 @@ int main (void){
     maxpool_layer_t *second_maxpooling_layer = alloc_maxpool_layer(n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2, ((28 - filter_hight + 1)/2 - filter_width + 1)/2);
     float *first_conv_bias = calloc(n_of_first_channel, sizeof(float));
     float *second_conv_bias = calloc(n_of_second_channel, sizeof(float));
+    maxpool_layer_t *backward_second_maxpool = alloc_maxpool_layer(n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2);
+    conv_layer_t *backward_second_conv = alloc_conv_layer(n_of_second_channel, (28 - filter_hight + 1)/2 - filter_hight + 1, (28 - filter_hight + 1)/2 - filter_hight + 1);
 
     thread_workspace_t *ws = alloc_workspace(4);
     bool *dropout_mask_for_first_hidden_layer = malloc(n_of_first_hidden_layer * (60000/batch_size));
@@ -1180,8 +1198,12 @@ int main (void){
 
             compute_hidden_activation_delta(delta_1, weight_to_first_hidden_layer, delta_in, n_of_input_layer, n_of_first_hidden_layer);
 
-            unflatten();
-        
+            unflatten(backward_second_maxpool, delta_in, n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2);
+            
+            maxpool_backward(backward_second_maxpool, backward_second_conv, second_maxpooling_layer, n_of_second_channel, (28 - filter_hight + 1)/2 - filter_hight + 1, (28 - filter_hight + 1)/2 - filter_hight + 1, 2);
+
+            backward_relu();
+
             for (int i = 0; i < n_of_first_hidden_layer; i++){
                 grad_to_b1t[i] += (float)grad_to_b1[i];
             }
@@ -1212,30 +1234,10 @@ int main (void){
                     adam_update(weight_to_output_layer, grad_to_w4t, m_w4, v_w4, n_of_third_hidden_layer * n_of_output_layer, bias_of_output_layer, grad_to_b4t, m_b4, v_b4, n_of_output_layer, adam_t);
                 }
 
-                for (int i = 0; i < n_of_first_hidden_layer; i++){
-                    grad_to_b1t[i] = 0.0f;
-                }
-                for (int i = 0; i < n_of_second_hidden_layer; i++){
-                    grad_to_b2t[i] = 0.0f;
-                }
-                for (int i = 0; i < n_of_third_hidden_layer; i++){
-                    grad_to_b3t[i] = 0.0f;
-                }
-                for (int i = 0; i < n_of_output_layer; i++){
-                    grad_to_b4t[i] = 0.0f;
-                }
-                for (int i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++){
-                    grad_to_w1t[i] = 0.0f;
-                }
-                for (int i = 0; i < n_of_first_hidden_layer * n_of_second_hidden_layer; i++){
-                    grad_to_w2t[i] = 0.0f;
-                }
-                for (int i = 0; i < n_of_second_hidden_layer * n_of_third_hidden_layer; i++){
-                    grad_to_w3t[i] = 0.0f;
-                }
-                for (int i = 0; i < n_of_third_hidden_layer * n_of_output_layer; i++){
-                    grad_to_w4t[i] = 0.0f;
-                }
+                float_array_zerofill(grad_to_b1t, n_of_first_hidden_layer);
+                float_array_zerofill(grad_to_b4t, n_of_output_layer);
+                float_array_zerofill(grad_to_w1t, n_of_input_layer * n_of_first_hidden_layer);
+                float_array_zerofill(grad_to_w4t, n_of_third_hidden_layer * n_of_output_layer);
                 batch++;
             }
         }
@@ -1265,21 +1267,6 @@ int main (void){
             answer = fgetc(test_data_labels);
 
             //forward pass
-            mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
-            add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
-            relu(z1, first_hidden_layer, n_of_first_hidden_layer);
-
-            mmul(z2, first_hidden_layer, weight_to_second_hidden_layer, n_of_second_hidden_layer, n_of_first_hidden_layer);
-            add_bias(z2, bias_of_second_hidden_layer, n_of_second_hidden_layer);
-            relu(z2, second_hidden_layer, n_of_second_hidden_layer);
-
-            mmul(z3, second_hidden_layer, weight_to_third_hidden_layer, n_of_third_hidden_layer, n_of_second_hidden_layer);
-            add_bias(z3, bias_of_third_hidden_layer, n_of_third_hidden_layer);
-            relu(z3, third_hidden_layer, n_of_third_hidden_layer);
-
-            mmul(zout, third_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_third_hidden_layer);
-            add_bias(zout, bias_of_output_layer, n_of_output_layer);
-            softmax(zout, output_layer, n_of_output_layer);
 
             for (int i = 0; i < n_of_output_layer; i++)
             {
@@ -1307,23 +1294,6 @@ int main (void){
         fseek(test_data_images, -784 * 10000, SEEK_CUR);
         fseek(test_data_labels, -10000, SEEK_CUR);
     }
-
-    //save weight
-    FILE *weight;
-    weight = fopen("weight.bin", "wb");
-    if (weight == NULL)
-    {
-        return 0;
-    }
-    fwrite(weight_to_first_hidden_layer, sizeof(float), n_of_input_layer * n_of_first_hidden_layer, weight);
-    fwrite(weight_to_second_hidden_layer, sizeof(float), n_of_first_hidden_layer * n_of_second_hidden_layer, weight);
-    fwrite(weight_to_third_hidden_layer, sizeof(float), n_of_second_hidden_layer * n_of_third_hidden_layer, weight);
-    fwrite(weight_to_output_layer, sizeof(float), n_of_third_hidden_layer * n_of_output_layer, weight);
-    fwrite(bias_of_first_hidden_layer, sizeof(float), n_of_first_hidden_layer, weight);
-    fwrite(bias_of_second_hidden_layer, sizeof(float), n_of_second_hidden_layer, weight);
-    fwrite(bias_of_third_hidden_layer, sizeof(float), n_of_third_hidden_layer, weight);
-    fwrite(bias_of_output_layer, sizeof(float), n_of_output_layer, weight);
-    fclose(weight);
 
     //end
     free(input_layer);
@@ -1365,53 +1335,31 @@ int main (void){
     free(grad_to_w4t);
     free(dropout_mask_for_first_hidden_layer);
     free(m_w1);
-    free(m_w2);
-    free(m_w3);
     free(m_w4);
     free(m_b1);
-    free(m_b2);
-    free(m_b3);
     free(m_b4);
     free(v_w1);
-    free(v_w2);
-    free(v_w3);
     free(v_w4);
-    free(v_b1);
-    free(v_b2);
-    free(v_b3);
     free(v_b4);
+    free(delta_in);
     input_layer = NULL;
     first_hidden_layer = NULL;
-    second_hidden_layer = NULL;
     output_layer = NULL;
     weight_to_first_hidden_layer = NULL;
     bias_of_first_hidden_layer = NULL;
-    weight_to_second_hidden_layer = NULL;
-    bias_of_second_hidden_layer = NULL;
     weight_to_output_layer = NULL;
     bias_of_output_layer = NULL;
     z1 = NULL;
-    z2 = NULL;
     zout = NULL;
     delta_4 = NULL;
-    delta_3 = NULL;
-    delta_2 = NULL;
     delta_1 = NULL;
     grad_to_b1 = NULL;
-    grad_to_b2 = NULL;
-    grad_to_b3 = NULL;
     grad_to_b4 = NULL;
     grad_to_w1 = NULL;
-    grad_to_w2 = NULL;
-    grad_to_w3 = NULL;
     grad_to_w4 = NULL;
     grad_to_b1t = NULL;
-    grad_to_b2t = NULL;
-    grad_to_b3t = NULL;
     grad_to_b4t = NULL;
     grad_to_w1t = NULL;
-    grad_to_w2t = NULL;
-    grad_to_w3t = NULL;
     grad_to_b4t = NULL;
     free_workspace(ws, 4);
     free_conv_layer(first_conv_layer_pre_activation, n_of_first_channel);
@@ -1422,6 +1370,8 @@ int main (void){
     free_filter(second_conv_filter, n_of_first_channel * n_of_second_channel);
     free_maxpool_layer(first_maxpooling_layer, n_of_first_channel);
     free_maxpool_layer(second_maxpooling_layer, n_of_second_channel);
+    free_maxpool_layer(backward_second_maxpool, n_of_second_channel);
+    free_conv_layer(backward_second_conv, n_of_second_channel);
     free(first_conv_bias);
     free(second_conv_bias);
     fclose(learning_data_images);
