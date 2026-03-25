@@ -15,7 +15,7 @@
 #define n_of_output_layer 10
 #define learning_rate 0.001
 #define batch_size 1
-#define epoch 1
+#define epoch 5
 #define debug 1
 #define neck_check 0
 #define threaded 0
@@ -1037,7 +1037,21 @@ int main (void){
     srand(time(NULL));
     he_initialize_uniform(weight_to_first_hidden_layer, n_of_input_layer, n_of_first_hidden_layer);
     he_initialize_uniform(weight_to_output_layer, n_of_first_hidden_layer, n_of_output_layer);
-    
+    // 第1畳み込み層の初期化 (fan_in = 1 * filter_hight * filter_width)
+    float limit1 = sqrtf(6.0f / (1.0f * filter_hight * filter_width));
+    for (int i = 0; i < n_of_first_channel; i++) {
+        for (int j = 0; j < filter_hight * filter_width; j++) {
+            first_conv_filter[i].filter[j] = ((float)rand() / RAND_MAX) * 2.0f * limit1 - limit1;
+        }
+    }
+
+    // 第2畳み込み層の初期化 (fan_in = n_of_first_channel * filter_hight * filter_width)
+    float limit2 = sqrtf(6.0f / (n_of_first_channel * filter_hight * filter_width));
+    for (int i = 0; i < n_of_first_channel * n_of_second_channel; i++) {
+        for (int j = 0; j < filter_hight * filter_width; j++) {
+            second_conv_filter[i].filter[j] = ((float)rand() / RAND_MAX) * 2.0f * limit2 - limit2;
+        }
+    }
 
     //loading datas
     learning_data_images = fopen(train_images, "rb");
@@ -1373,7 +1387,7 @@ int main (void){
                         first_conv_bias[c] -= learning_rate * grad_to_b_conv1[c];
                         
                     }
-                    for (size_t c = 0; c < n_of_second_channel; c++)
+                    for (size_t c = 0; c < n_of_second_channel * n_of_first_channel; c++)
                     {
                         for (size_t h = 0; h < filter_hight; h++)
                         {
@@ -1383,9 +1397,13 @@ int main (void){
                             }
                             
                         }
-                        second_conv_bias[c] -= learning_rate * grad_to_b_conv2[c];
                         
                     }
+                    for (size_t c = 0; c < n_of_second_channel; c++)
+                    {
+                        second_conv_bias[c] -= learning_rate * grad_to_b_conv2[c];
+                    }
+                    
                     memset(grad_to_w1, 0, n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
                     memset(grad_to_w4, 0, n_of_first_hidden_layer * n_of_output_layer * sizeof(float));
                     memset(grad_to_b1, 0, n_of_first_hidden_layer * sizeof(float));
