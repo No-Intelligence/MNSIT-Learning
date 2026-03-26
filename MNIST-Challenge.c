@@ -17,9 +17,9 @@
 #define n_of_input_layer 1600
 #define n_of_first_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.0015
+#define learning_rate 0.0025
 #define batch_size 160
-#define epoch 15
+#define epoch 1
 #define debug 1
 #define neck_check 0
 #define threaded 0
