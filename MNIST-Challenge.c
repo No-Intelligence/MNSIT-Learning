@@ -9,17 +9,20 @@
 #include <stdbool.h>
 #include <immintrin.h>
 
+// ブロックサイズ（L1/L2キャッシュサイズに応じて調整）
+#define BLOCK_H 16
+#define BLOCK_W 16
+
 #define PI 3.14159265358979
 #define n_of_input_layer 1600
 #define n_of_first_hidden_layer 128
 #define n_of_output_layer 10
-#define learning_rate 0.002
+#define learning_rate 0.0015
 #define batch_size 160
-#define epoch 1
+#define epoch 15
 #define debug 1
 #define neck_check 0
 #define threaded 0
-#define L2_regularization 0
 #define regularization_rate 0.0005f
 #define dropout 0
 #define dropout_rate 0.3f
@@ -35,10 +38,10 @@
 #define n_of_first_channel 32
 #define n_of_second_channel 64
 
-#define train_images "train-images.idx3-ubyte"
-#define train_labels "train-labels.idx1-ubyte"
-#define test_images "t10k-images.idx3-ubyte"
-#define test_labels "t10k-labels.idx1-ubyte"
+#define train_images "train-images-fashion.idx3-ubyte"
+#define train_labels "train-labels-fashion.idx1-ubyte"
+#define test_images "t10k-images-fashion.idx3-ubyte"
+#define test_labels "t10k-labels-fashion.idx1-ubyte"
 
 typedef struct {
     float *layer;
@@ -219,23 +222,11 @@ void add_weight (float *grad, float *weight, int n_of_grad) {
     
 }
 
-float L2_regularization_sum (float *w1, float *w2, float *w3, float *w4, int n_of_ain, int n_of_a1, int n_of_a2, int n_of_a3, int n_of_aout) {
+float f_arr_squared_sum (float *arr, int n_arr) {
     float sum = 0.0f;
-    for (size_t i = 0; i < n_of_ain * n_of_a1; i++)
+    for (size_t i = 0; i < n_arr; i++)
     {
-        sum += w1[i] * w1[i];
-    }
-    for (size_t i = 0; i < n_of_a1 * n_of_a2; i++)
-    {
-        sum += w2[i] * w2[i];
-    }
-    for (size_t i = 0; i < n_of_a2 * n_of_a3; i++)
-    {
-        sum += w3[i] * w3[i];
-    }
-    for (size_t i = 0; i < n_of_a3 * n_of_aout; i++)
-    {
-        sum += w4[i] * w4[i];
+        sum += arr[i] * arr[i];
     }
     return sum;
 }
@@ -807,43 +798,45 @@ float float_array_sum  (float *arr, int n_arr) {
  * @param in_w 画像幅は畳み込み処理前のものを入力
  */
 void backward_conv_filter_single_to_multi (conv_filter_t *output_grad, float *activation, conv_layer_t *z_delta, int in_channel, int in_h, int in_w) {
+// 出力マップのサイズ（フィルタサイズはグローバル変数と仮定）
     int out_h = in_h - filter_hight + 1;
     int out_w = in_w - filter_width + 1;
 
-    for (size_t c = 0; c < in_channel; c++)
-    {
-        for (size_t kh = 0; kh < filter_hight; kh++)
-        {
-            for (size_t kw = 0; kw < filter_width; kw++)
-            {
-                output_grad[c].filter[filter_width * kh + kw] = 0.0f;
-            }
-            
-        }
-        
+    // 1. フィルタ勾配のゼロ初期化（memset で高速化）
+    for (int c = 0; c < in_channel; ++c) {
+        memset(output_grad[c].filter, 0,
+               filter_hight * filter_width * sizeof(float));
     }
-    
-    for (size_t c = 0; c < in_channel; c++)
-    {
-        for (size_t kh = 0; kh < filter_hight; kh++)
-        {
-            for (size_t kw = 0; kw < filter_width; kw++)
-            {
-                for (size_t h = 0; h < out_h; h++)
-                {
-                    for (size_t w = 0; w < out_w; w++)
-                    {
-                        output_grad[c].filter[filter_width * kh + kw] += z_delta[c].layer[out_w * h + w] * activation[in_w * kh + kw + in_w * h + w];
+
+    // 2. メイン計算：ループ順序の入れ替え + ブロッキング
+    for (int c = 0; c < in_channel; ++c) {
+        float *filter = output_grad[c].filter;
+        float *z = z_delta[c].layer;          // 出力誤差 (out_h x out_w)
+
+        // 出力マップをブロック単位で処理
+        for (int hb = 0; hb < out_h; hb += BLOCK_H) {
+            int h_end = (hb + BLOCK_H < out_h) ? hb + BLOCK_H : out_h;
+            for (int wb = 0; wb < out_w; wb += BLOCK_W) {
+                int w_end = (wb + BLOCK_W < out_w) ? wb + BLOCK_W : out_w;
+
+                // ブロック内の全出力位置を処理
+                for (int h = hb; h < h_end; ++h) {
+                    for (int w = wb; w < w_end; ++w) {
+                        float delta = z[out_w * h + w];  // 出力誤差値
+
+                        // この出力位置に対応するフィルタ領域を更新
+                        for (int kh = 0; kh < filter_hight; ++kh) {
+                            for (int kw = 0; kw < filter_width; ++kw) {
+                                // 入力活性化の対応位置
+                                float act = activation[in_w * (kh + h) + (kw + w)];
+                                filter[filter_width * kh + kw] += delta * act;
+                            }
+                        }
                     }
-                    
                 }
-                
             }
-            
         }
-        
     }
-    
 }
 
 /**
@@ -856,46 +849,47 @@ void backward_conv_filter_multi_to_multi (conv_filter_t *output_grad, maxpool_la
     int out_h = in_h - filter_hight + 1;
     int out_w = in_w - filter_width + 1;
 
-    for (size_t oc = 0; oc < out_channel; oc++)
-    {
-        for (size_t ic = 0; ic < in_channel; ic++)
-        {
-            for (size_t kh = 0; kh < filter_hight; kh++)
-            {
-                for (size_t kw = 0; kw < filter_width; kw++)
-                {
-                    output_grad[in_channel * oc + ic].filter[filter_width * kh + kw] = 0.0f;
-                }
-                
-            }
-            
+    // 1. フィルタ勾配のゼロ初期化（memset で高速化）
+    for (int oc = 0; oc < out_channel; ++oc) {
+        for (int ic = 0; ic < in_channel; ++ic) {
+            memset(output_grad[in_channel * oc + ic].filter, 0,
+                   filter_hight * filter_width * sizeof(float));
         }
-        
     }
-    for (size_t oc = 0; oc < out_channel; oc++)
-    {
-        for (size_t ic = 0; ic < in_channel; ic++)
-        {
-            for (size_t kh = 0; kh < filter_hight; kh++)
-            {
-                for (size_t kw = 0; kw < filter_width; kw++)
-                {
-                    for (size_t h = 0; h < out_h; h++)
-                    {
-                        for (size_t w = 0; w < out_w; w++)
-                        {
-                            output_grad[in_channel * oc + ic].filter[filter_width * kh + kw] += z_delta[oc].layer[out_w * h + w] * activation[ic].layer[in_w * kh + kw + in_w * h + w];
+
+    // 2. メイン計算：ループ順序の入れ替え + ブロッキング
+    for (int oc = 0; oc < out_channel; ++oc) {
+        float *z = z_delta[oc].layer;          // 出力誤差 (out_h x out_w)
+
+        // 出力マップをブロック単位で処理
+        for (int hb = 0; hb < out_h; hb += BLOCK_H) {
+            int h_end = (hb + BLOCK_H < out_h) ? hb + BLOCK_H : out_h;
+            for (int wb = 0; wb < out_w; wb += BLOCK_W) {
+                int w_end = (wb + BLOCK_W < out_w) ? wb + BLOCK_W : out_w;
+
+                // ブロック内の全出力位置を処理
+                for (int h = hb; h < h_end; ++h) {
+                    for (int w = wb; w < w_end; ++w) {
+                        float delta = z[out_w * h + w];  // 出力誤差値
+
+                        // この出力位置に対応する全入力チャネル・フィルタ位置を更新
+                        for (int ic = 0; ic < in_channel; ++ic) {
+                            float *filter = output_grad[in_channel * oc + ic].filter;
+                            float *act = activation[ic].layer;   // 入力活性化
+
+                            for (int kh = 0; kh < filter_hight; ++kh) {
+                                for (int kw = 0; kw < filter_width; ++kw) {
+                                    // 入力活性化の対応位置
+                                    float act_val = act[in_w * (kh + h) + (kw + w)];
+                                    filter[filter_width * kh + kw] += delta * act_val;
+                                }
+                            }
                         }
                     }
-                    
                 }
-                
             }
-            
         }
-        
     }
-    
 }
 
 void backward_conv_layer (maxpool_layer_t *d_input, conv_layer_t *d_z, conv_filter_t *filter, int n_input_channel, int n_output_channel, int in_h, int in_w) {
@@ -1413,22 +1407,31 @@ int main (void){
                 loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
             }
             loss = -loss;
-            //if (L2_regularization) loss = loss + regularization_rate / 2 * L2_regularization_sum(weight_to_first_hidden_layer, weight_to_second_hidden_layer, weight_to_third_hidden_layer, weight_to_output_layer, n_of_input_layer, n_of_first_hidden_layer, n_of_second_hidden_layer, n_of_third_hidden_layer, n_of_output_layer);
+            //L2 regularization
+            loss += f_arr_squared_sum(weight_to_output_layer, n_of_output_layer * n_of_first_hidden_layer);
+            loss += f_arr_squared_sum(weight_to_first_hidden_layer, n_of_first_hidden_layer * n_of_input_layer);
+            for (size_t c = 0; c < n_of_first_channel; c++)
+            {
+                loss += f_arr_squared_sum(first_conv_filter[c].filter, filter_hight * filter_width);   
+            }
+            for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+            {
+                loss += f_arr_squared_sum(second_conv_filter[c].filter, filter_hight * filter_width);   
+            }
             avg_loss += loss;
             
-
             //backward pass
             compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
 
             weight_grad(delta_4, first_hidden_layer, grad_to_w4, n_of_output_layer, n_of_first_hidden_layer);
-            //if (L2_regularization) {add_weight(grad_to_w4, weight_to_output_layer, n_of_output_layer * n_of_third_hidden_layer);}
+            add_weight(grad_to_w4, weight_to_output_layer, n_of_output_layer * n_of_first_hidden_layer);
             grad_bias(delta_4, grad_to_b4, n_of_output_layer);
 
             compute_hidden_delta(delta_4, weight_to_output_layer, z1, delta_1, n_of_first_hidden_layer, n_of_output_layer);
             if (dropout == 1) {apply_dropout(delta_1, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
 
             weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
-            //if (L2_regularization) {add_weight(grad_to_w1, weight_to_first_hidden_layer, n_of_first_hidden_layer * n_of_input_layer);}
+            add_weight(grad_to_w1, weight_to_first_hidden_layer, n_of_first_hidden_layer * n_of_input_layer);
             grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
 
             compute_hidden_activation_delta(delta_1, weight_to_first_hidden_layer, delta_in, n_of_input_layer, n_of_first_hidden_layer);
@@ -1450,6 +1453,11 @@ int main (void){
 
             //フィルター勾配
             backward_conv_filter_multi_to_multi(grad_to_second_conv_filter, first_maxpooling_layer, backward_second_conv, n_of_second_channel, n_of_first_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
+            for (size_t c = 0; c < n_of_second_channel * n_of_first_channel; c++)
+            {
+                add_weight(grad_to_second_conv_filter[c].filter, second_conv_filter[c].filter, filter_hight * filter_width);
+            }
+            
 
             //前層アクティベーション勾配
             backward_conv_layer(backward_first_maxpool, backward_second_conv, second_conv_filter, n_of_first_channel, n_of_second_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
@@ -1469,6 +1477,12 @@ int main (void){
 
             //フィルター勾配
             backward_conv_filter_single_to_multi(grad_to_first_conv_filter, input_image, backward_first_conv, n_of_first_channel, 28, 28);
+            for (size_t c = 0; c < n_of_first_channel; c++)
+            {
+                add_weight(grad_to_first_conv_filter[c].filter, first_conv_filter[c].filter, filter_hight * filter_width);
+            }
+            
+
 
             for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
             {
@@ -1722,10 +1736,17 @@ int main (void){
                 loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
             }
             loss = -loss;
-            /*if (L2_regularization)
+            //L2 regularization
+            loss += f_arr_squared_sum(weight_to_output_layer, n_of_output_layer * n_of_first_hidden_layer);
+            loss += f_arr_squared_sum(weight_to_first_hidden_layer, n_of_first_hidden_layer * n_of_input_layer);
+            for (size_t c = 0; c < n_of_first_channel; c++)
             {
-                loss = loss + regularization_rate / 2 * L2_regularization_sum(weight_to_first_hidden_layer, weight_to_second_hidden_layer, weight_to_third_hidden_layer, weight_to_output_layer, n_of_input_layer, n_of_first_hidden_layer, n_of_second_hidden_layer, n_of_third_hidden_layer, n_of_output_layer);
-            }*/
+                loss += f_arr_squared_sum(first_conv_filter[c].filter, filter_hight * filter_width);   
+            }
+            for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+            {
+                loss += f_arr_squared_sum(second_conv_filter[c].filter, filter_hight * filter_width);   
+            }
             avg_loss += loss;
             if (find_max_index(output_layer, n_of_output_layer) == answer)
             {
