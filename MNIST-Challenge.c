@@ -14,8 +14,8 @@
 #define n_of_first_hidden_layer 128
 #define n_of_output_layer 10
 #define learning_rate 0.001
-#define batch_size 1
-#define epoch 5
+#define batch_size 128
+#define epoch 10
 #define debug 1
 #define neck_check 0
 #define threaded 0
@@ -97,7 +97,7 @@ conv_filter_t* alloc_filter (int n_filters) {
     conv_filter_t *tmp_filter = calloc(n_filters, sizeof(conv_filter_t));
     for (size_t i = 0; i < n_filters; i++)
     {
-        tmp_filter[i].filter = malloc(filter_hight * filter_width * sizeof(float));
+        tmp_filter[i].filter = calloc(filter_hight * filter_width, sizeof(float));
     }
     return tmp_filter;
 }
@@ -186,14 +186,6 @@ void free_workspace (thread_workspace_t *p, int n_threads) {
         free(p[i].grad_w1t); free(p[i].grad_w2t); free(p[i].grad_w3t); free(p[i].grad_w4t); free(p[i].grad_b1t); free(p[i].grad_b2t); free(p[i].grad_b3t); free(p[i].grad_b4t);
     }
     free(p);
-}
-
-void float_array_zerofill (float *array, int n) {
-    for (size_t i = 0; i < n; i++)
-    {
-        array[i] = 0.0f;
-    }
-    
 }
 
 void apply_dropout (float *operated_arr, bool *mask, int batch, int n_of_arr) {
@@ -797,6 +789,19 @@ void backward_conv_filter_single_to_multi (conv_filter_t *output_grad, float *ac
         {
             for (size_t kw = 0; kw < filter_width; kw++)
             {
+                output_grad[c].filter[filter_width * kh + kw] = 0.0f;
+            }
+            
+        }
+        
+    }
+    
+    for (size_t c = 0; c < in_channel; c++)
+    {
+        for (size_t kh = 0; kh < filter_hight; kh++)
+        {
+            for (size_t kw = 0; kw < filter_width; kw++)
+            {
                 for (size_t h = 0; h < out_h; h++)
                 {
                     for (size_t w = 0; w < out_w; w++)
@@ -824,6 +829,22 @@ void backward_conv_filter_multi_to_multi (conv_filter_t *output_grad, maxpool_la
     int out_h = in_h - filter_hight + 1;
     int out_w = in_w - filter_width + 1;
 
+    for (size_t oc = 0; oc < out_channel; oc++)
+    {
+        for (size_t ic = 0; ic < in_channel; ic++)
+        {
+            for (size_t kh = 0; kh < filter_hight; kh++)
+            {
+                for (size_t kw = 0; kw < filter_width; kw++)
+                {
+                    output_grad[in_channel * oc + ic].filter[filter_width * kh + kw] = 0.0f;
+                }
+                
+            }
+            
+        }
+        
+    }
     for (size_t oc = 0; oc < out_channel; oc++)
     {
         for (size_t ic = 0; ic < in_channel; ic++)
@@ -974,7 +995,6 @@ int main (void){
     float *zout;
     float *delta_4, *delta_1;
     float *grad_to_w4, *grad_to_b4, *grad_to_w1, *grad_to_b1;
-    float *grad_to_w4t, *grad_to_b4t, *grad_to_w1t, *grad_to_b1t;
     float *m_w1, *m_w4;
     float *m_b1, *m_b4;
     float *v_w1, *v_w4;
@@ -1000,10 +1020,6 @@ int main (void){
     grad_to_w1 = (float*)malloc(n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
     grad_to_b4 = (float*)malloc(n_of_output_layer * sizeof(float));
     grad_to_b1 = (float*)malloc(n_of_first_hidden_layer * sizeof(float));
-    grad_to_w4t = (float*)calloc(n_of_first_hidden_layer * n_of_output_layer, sizeof(float));
-    grad_to_w1t = (float*)calloc(n_of_input_layer * n_of_first_hidden_layer, sizeof(float));
-    grad_to_b4t = (float*)calloc(n_of_output_layer, sizeof(float));
-    grad_to_b1t = (float*)calloc(n_of_first_hidden_layer, sizeof(float));
     /*m_w1 = calloc(n_of_input_layer * n_of_first_hidden_layer, sizeof(float));
     m_b1 = calloc(n_of_first_hidden_layer, sizeof(float));
     m_b4 = calloc(n_of_output_layer, sizeof(float));
@@ -1026,6 +1042,17 @@ int main (void){
     maxpool_layer_t *backward_first_maxpool = alloc_maxpool_layer(n_of_first_channel, (28 - filter_hight + 1)/2, (28 - filter_hight + 1)/2);
     conv_layer_t *backward_first_conv = alloc_conv_layer(n_of_first_channel, 28 - filter_hight + 1, 28 - filter_hight + 1);
     conv_filter_t *grad_to_first_conv_filter = alloc_filter(n_of_first_channel);
+
+    //total buffer
+    float *grad_to_w4t = calloc(n_of_first_hidden_layer * n_of_output_layer, sizeof(float));
+    float *grad_to_w1t = calloc(n_of_input_layer * n_of_first_hidden_layer, sizeof(float));
+    float *grad_to_b4t = calloc(n_of_output_layer, sizeof(float));
+    float *grad_to_b1t = calloc(n_of_first_hidden_layer, sizeof(float));
+    conv_filter_t *grad_to_first_conv_filter_t = alloc_filter(n_of_first_channel);
+    conv_filter_t *grad_to_second_conv_filter_t = alloc_filter(n_of_first_channel * n_of_second_channel);
+    float *grad_to_b_conv1_t = calloc(n_of_first_channel, sizeof(float));
+    float *grad_to_b_conv2_t = calloc(n_of_second_channel, sizeof(float));
+    
 
     //thread_workspace_t *ws = alloc_workspace(4);
     bool *dropout_mask_for_first_hidden_layer = malloc(n_of_first_hidden_layer * (60000/batch_size));
@@ -1246,6 +1273,54 @@ int main (void){
             fread(training_image_buffer, sizeof(uint8_t), 60000 * 784, learning_data_images);
             fseek(learning_data_labels, 8, SEEK_SET);
             fread(training_label_buffer, sizeof(uint8_t), 60000, learning_data_labels);
+            for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
+            {
+                grad_to_w1t[i] = 0;
+            }
+            for (size_t i = 0; i < n_of_first_hidden_layer; i++)
+            {
+                grad_to_b1t[i] = 0;
+            }
+            for (size_t i = 0; i < n_of_first_hidden_layer * n_of_output_layer; i++)
+            {
+                grad_to_w4t[i] = 0;
+            }
+            for (size_t i = 0; i < n_of_output_layer; i++)
+            {
+                grad_to_b4t[i] = 0;
+            }
+            for (size_t c = 0; c < n_of_first_channel; c++)
+            {
+                for (size_t h = 0; h < filter_hight; h++)
+                {
+                    for (size_t w = 0; w < filter_width; w++)
+                    {
+                        grad_to_first_conv_filter_t[c].filter[h * filter_width + w] = 0;
+                    }
+                
+                }
+                
+            }
+            for (size_t i = 0; i < n_of_first_channel; i++)
+            {
+                grad_to_b_conv1_t[i] = 0;
+            }
+            for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+            {
+                for (size_t h = 0; h < filter_hight; h++)
+                {
+                    for (size_t w = 0; w < filter_width; w++)
+                    {
+                        grad_to_second_conv_filter_t[c].filter[h * filter_width + w] = 0;
+                    }
+                    
+                }
+                
+            }
+            for (size_t i = 0; i < n_of_second_channel; i++)
+            {
+                grad_to_b_conv2_t[i] = 0;
+            }
 
             generate_dropout_mask(dropout_mask_for_first_hidden_layer, n_of_first_hidden_layer * (60000/batch_size));
 
@@ -1369,22 +1444,120 @@ int main (void){
             //フィルター勾配
             backward_conv_filter_single_to_multi(grad_to_first_conv_filter, input_image, backward_first_conv, n_of_first_channel, 28, 28);
 
+            for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
+            {
+                grad_to_w1t[i] += grad_to_w1[i];
+            }
+            for (size_t i = 0; i < n_of_first_hidden_layer; i++)
+            {
+                grad_to_b1t[i] += grad_to_b1[i];
+            }
+            for (size_t i = 0; i < n_of_first_hidden_layer * n_of_output_layer; i++)
+            {
+                grad_to_w4t[i] += grad_to_w4[i];
+            }
+            for (size_t i = 0; i < n_of_output_layer; i++)
+            {
+                grad_to_b4t[i] += grad_to_b4[i];
+            }
+            for (size_t c = 0; c < n_of_first_channel; c++)
+            {
+                for (size_t h = 0; h < filter_hight; h++)
+                {
+                    for (size_t w = 0; w < filter_width; w++)
+                    {
+                        grad_to_first_conv_filter_t[c].filter[h * filter_width + w] += grad_to_first_conv_filter[c].filter[h * filter_width + w];
+                    }
+                    
+                }
+                
+            }
+            for (size_t i = 0; i < n_of_first_channel; i++)
+            {
+                grad_to_b_conv1_t[i] += grad_to_b_conv1[i];
+            }
+            for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+            {
+                for (size_t h = 0; h < filter_hight; h++)
+                {
+                    for (size_t w = 0; w < filter_width; w++)
+                    {
+                        grad_to_second_conv_filter_t[c].filter[h * filter_width + w] += grad_to_second_conv_filter[c].filter[h * filter_width + w];
+                    }
+                    
+                }
+                
+            }
+            for (size_t i = 0; i < n_of_second_channel; i++)
+            {
+                grad_to_b_conv2_t[i] += grad_to_b_conv2[i];
+            }
+
             //update params
-            //if (loop%batch_size == (batch_size-1)){
+            if (loop%batch_size == (batch_size-1)){
+                for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
+                {
+                    grad_to_w1t[i] /= batch_size;
+                }
+                for (size_t i = 0; i < n_of_first_hidden_layer; i++)
+                {
+                    grad_to_b1t[i] /= batch_size;
+                }
+                for (size_t i = 0; i < n_of_first_hidden_layer * n_of_output_layer; i++)
+                {
+                    grad_to_w4t[i] /= batch_size;
+                }
+                for (size_t i = 0; i < n_of_output_layer; i++)
+                {
+                    grad_to_b4t[i] /= batch_size;
+                }
+                for (size_t c = 0; c < n_of_first_channel; c++)
+                {
+                    for (size_t h = 0; h < filter_hight; h++)
+                    {
+                        for (size_t w = 0; w < filter_width; w++)
+                        {
+                            grad_to_first_conv_filter_t[c].filter[h * filter_width + w] /= batch_size;
+                        }
+                        
+                    }
+                    
+                }
+                for (size_t i = 0; i < n_of_first_channel; i++)
+                {
+                    grad_to_b_conv1_t[i] /= batch_size;
+                }
+                for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+                {
+                    for (size_t h = 0; h < filter_hight; h++)
+                    {
+                        for (size_t w = 0; w < filter_width; w++)
+                        {
+                            grad_to_second_conv_filter_t[c].filter[h * filter_width + w] /= batch_size;
+                        }
+                    
+                    }
+                
+                }
+                for (size_t i = 0; i < n_of_second_channel; i++)
+                {
+                    grad_to_b_conv2_t[i] /= batch_size;
+                }
+
                 if (adam == false) {
-                    update_params(weight_to_first_hidden_layer, grad_to_w1, bias_of_first_hidden_layer, grad_to_b1, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
-                    update_params(weight_to_output_layer, grad_to_w4, bias_of_output_layer, grad_to_b4, n_of_first_hidden_layer * n_of_output_layer, n_of_output_layer);
+                    update_params(weight_to_first_hidden_layer, grad_to_w1t, bias_of_first_hidden_layer, grad_to_b1t, n_of_input_layer * n_of_first_hidden_layer, n_of_first_hidden_layer);
+                    update_params(weight_to_output_layer, grad_to_w4t, bias_of_output_layer, grad_to_b4t, n_of_first_hidden_layer * n_of_output_layer, n_of_output_layer);
                     for (size_t c = 0; c < n_of_first_channel; c++)
                     {
                         for (size_t h = 0; h < filter_hight; h++)
                         {
                             for (size_t w = 0; w < filter_width; w++)
                             {
-                                first_conv_filter[c].filter[filter_width * h + w] -= learning_rate * grad_to_first_conv_filter[c].filter[filter_width * h + w];
+                                first_conv_filter[c].filter[filter_width * h + w] -= learning_rate * grad_to_first_conv_filter_t[c].filter[filter_width * h + w];
                             }
                             
                         }
-                        first_conv_bias[c] -= learning_rate * grad_to_b_conv1[c];
+                        first_conv_bias[c] -= learning_rate * grad_to_b_conv1_t[c];
                         
                     }
                     for (size_t c = 0; c < n_of_second_channel * n_of_first_channel; c++)
@@ -1393,7 +1566,7 @@ int main (void){
                         {
                             for (size_t w = 0; w < filter_width; w++)
                             {
-                                second_conv_filter[c].filter[filter_width * h + w] -= learning_rate * grad_to_second_conv_filter[c].filter[filter_width * h + w];
+                                second_conv_filter[c].filter[filter_width * h + w] -= learning_rate * grad_to_second_conv_filter_t[c].filter[filter_width * h + w];
                             }
                             
                         }
@@ -1401,17 +1574,9 @@ int main (void){
                     }
                     for (size_t c = 0; c < n_of_second_channel; c++)
                     {
-                        second_conv_bias[c] -= learning_rate * grad_to_b_conv2[c];
+                        second_conv_bias[c] -= learning_rate * grad_to_b_conv2_t[c];
                     }
                     
-                    memset(grad_to_w1, 0, n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
-                    memset(grad_to_w4, 0, n_of_first_hidden_layer * n_of_output_layer * sizeof(float));
-                    memset(grad_to_b1, 0, n_of_first_hidden_layer * sizeof(float));
-                    memset(grad_to_b4, 0, n_of_output_layer * sizeof(float));
-                    for (int i = 0; i < n_of_first_channel; i++)
-                        memset(grad_to_first_conv_filter[i].filter, 0, filter_hight * filter_width * sizeof(float));
-                    for (int i = 0; i < n_of_first_channel * n_of_second_channel; i++)
-                        memset(grad_to_second_conv_filter[i].filter, 0, filter_hight * filter_width * sizeof(float));
                     
                 }
                 else {
@@ -1419,7 +1584,56 @@ int main (void){
                 }
 
                 batch++;
-            //}
+                for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
+                {
+                    grad_to_w1t[i] = 0;
+                }
+                for (size_t i = 0; i < n_of_first_hidden_layer; i++)
+                {
+                    grad_to_b1t[i] = 0;
+                }
+                for (size_t i = 0; i < n_of_first_hidden_layer * n_of_output_layer; i++)
+                {
+                    grad_to_w4t[i] = 0;
+                }
+                for (size_t i = 0; i < n_of_output_layer; i++)
+                {
+                    grad_to_b4t[i] = 0;
+                }
+                for (size_t c = 0; c < n_of_first_channel; c++)
+                {
+                    for (size_t h = 0; h < filter_hight; h++)
+                    {
+                        for (size_t w = 0; w < filter_width; w++)
+                        {
+                            grad_to_first_conv_filter_t[c].filter[h * filter_width + w] = 0;
+                        }
+                        
+                    }
+                    
+                }
+                for (size_t i = 0; i < n_of_first_channel; i++)
+                {
+                    grad_to_b_conv1_t[i] = 0;
+                }
+                for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+                {
+                    for (size_t h = 0; h < filter_hight; h++)
+                    {
+                        for (size_t w = 0; w < filter_width; w++)
+                        {
+                            grad_to_second_conv_filter_t[c].filter[h * filter_width + w] = 0;
+                        }
+                    
+                    }
+                
+                }
+                for (size_t i = 0; i < n_of_second_channel; i++)
+                {
+                    grad_to_b_conv2_t[i] = 0;
+                }
+
+            }
         }
         end = clock();
         free(training_image_buffer);
@@ -1431,7 +1645,9 @@ int main (void){
         else if (neck_check && threaded) {printf("time: %f sec\n", (double)(end - start)/4 / CLOCKS_PER_SEC);}
         avg_loss = 0.0f;
 
-        //testify section
+            //testify section
+        fseek(test_data_images, 16, SEEK_SET);
+        fseek(test_data_labels, 8, SEEK_SET);
         for (int loop = 0; loop < 10000; loop++){
             if (!(loop%1000) && debug) {printf("%d datas have beed precessed.\n", loop);}
             
@@ -1508,8 +1724,6 @@ int main (void){
         }
         printf("at epoch%d, test has finished. average loss:%f, hit rate: %f%%\n", epoch_loop+1, avg_loss / 10000, (float)hit/100);
         fprintf(fp, "%f,%f\n", avg_loss / 10000, (float)hit/100);
-        fseek(test_data_images, -784 * 10000, SEEK_CUR);
-        fseek(test_data_labels, -10000, SEEK_CUR);
     }
 
     //end
