@@ -279,10 +279,7 @@ void vec_add_avx (const float *a, const float *b, float *c, int n) {
 }
 
 int mmul (float *output_arr, float *input_arr, float *matrix, int n_of_output_arr, int n_of_input_arr){
-    for (int i = 0; i < n_of_output_arr; i++)
-    {
-        output_arr[i] = 0.0;
-    }
+    memset(output_arr, 0, n_of_output_arr * sizeof(float));
     
     for (int i = 0; i < n_of_output_arr; i++)
     {
@@ -421,10 +418,7 @@ void grad_bias (float *input, float *output, int n_of_arr){
 }
 
 void compute_hidden_delta (float *z_delta, float *next_weight, float *z, float *output, int n_of_activation, int n_of_z_delta){
-    for (int i = 0; i < n_of_activation; i++)
-    {
-        output[i] = 0.0f;
-    }
+    memset(output, 0, n_of_activation * sizeof(float));
     for (int i = 0; i < n_of_activation; i++)
     {
         for (int j = 0; j < n_of_z_delta; j++)
@@ -446,10 +440,7 @@ void compute_hidden_delta (float *z_delta, float *next_weight, float *z, float *
 }
 
 void compute_hidden_activation_delta (float *z_delta, float *next_weight, float *output, int n_of_activation, int n_of_z_delta){
-    for (int i = 0; i < n_of_activation; i++)
-    {
-        output[i] = 0.0f;
-    }
+    memset(output, 0, n_of_activation * sizeof(float));
     for (int i = 0; i < n_of_activation; i++)
     {
         for (int j = 0; j < n_of_z_delta; j++)
