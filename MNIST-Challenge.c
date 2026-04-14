@@ -10,8 +10,8 @@
 #include <immintrin.h>
 
 // ブロックサイズ（L1/L2キャッシュサイズに応じて調整）
-#define BLOCK_H 64
-#define BLOCK_W 64
+#define BLOCK_H 32
+#define BLOCK_W 32
 
 #define PI 3.14159265358979
 #define n_of_input_layer 1600
@@ -19,12 +19,12 @@
 #define n_of_output_layer 10
 #define learning_rate 0.001
 #define momentum_beta 0.9f
-#define batch_size 300
-#define epoch 1
+#define batch_size 480
+#define epoch 5
 #define debug 1
 #define neck_check 0
 #define threaded 1
-#define num_threads 6
+#define num_threads 12
 #define regularization_rate 0.0005f
 #define dropout 0
 #define dropout_rate 0.3f
@@ -926,7 +926,7 @@ void* training_threaded (void* arg){
         for (int loop = 0; loop < batch_size / num_threads; loop++){
 
             //inputting data
-            for (int i = 0; i < n_of_input_layer; i++){
+            for (int i = 0; i < 784; i++){
                 datas->a_in[i] = (float)(datas->training_image_buffer[784 * loop + i])/255;
             }
 
@@ -985,7 +985,7 @@ void* training_threaded (void* arg){
             compute_hidden_delta(datas->delta_4, datas->wout, datas->z_1, datas->delta_1, n_of_first_hidden_layer, n_of_output_layer);
 
             weight_grad(datas->delta_1, datas->a_0, datas->grad_w1, n_of_first_hidden_layer, n_of_input_layer);
-            grad_bias(datas->delta_1, datas->b1, n_of_first_hidden_layer);
+            grad_bias(datas->delta_1, datas->grad_b1, n_of_first_hidden_layer);
 
             compute_hidden_activation_delta(datas->delta_1, datas->w1, datas->delta_in, n_of_input_layer, n_of_first_hidden_layer);
 
@@ -1339,6 +1339,18 @@ int main (void){
                 if (!(loop%100) && debug) {printf("%d datas have been processed.\n", loop);}
 
                 //reset total grad
+                // グローバル勾配のリセット
+                memset(grad_to_w1t, 0, n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
+                memset(grad_to_w4t, 0, n_of_first_hidden_layer * n_of_output_layer * sizeof(float));
+                memset(grad_to_b1t, 0, n_of_first_hidden_layer * sizeof(float));
+                memset(grad_to_b4t, 0, n_of_output_layer * sizeof(float));
+                // conv 系のグローバル勾配も同様にゼロクリア
+                for (int c = 0; c < n_of_first_channel; c++)
+                    memset(grad_to_first_conv_filter_t[c].filter, 0, filter_hight * filter_width * sizeof(float));
+                for (int c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+                    memset(grad_to_second_conv_filter_t[c].filter, 0, filter_hight * filter_width * sizeof(float));
+                memset(grad_to_b_conv1_t, 0, n_of_first_channel * sizeof(float));
+                memset(grad_to_b_conv2_t, 0, n_of_second_channel * sizeof(float));
                 for (size_t i = 0; i < num_threads; i++)
                 {
                     for (size_t j = 0; j < n_of_input_layer * n_of_first_hidden_layer; j++)
@@ -1370,6 +1382,19 @@ int main (void){
                         ws[i].grad_b4t[j] = 0.0f;
                     }
                 
+                }
+
+                for (size_t i = 0; i < num_threads; i++) {
+                    for (size_t c = 0; c < n_of_first_channel; c++) {
+                        memset(ws[i].grad_to_first_conv_filter_t[c].filter, 0,
+                            filter_hight * filter_width * sizeof(float));
+                    }
+                    for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++) {
+                        memset(ws[i].grad_to_second_conv_filter_t[c].filter, 0,
+                            filter_hight * filter_width * sizeof(float));
+                    }
+                    memset(ws[i].grad_to_b_conv1_t, 0, n_of_first_channel * sizeof(float));
+                    memset(ws[i].grad_to_b_conv2_t, 0, n_of_second_channel * sizeof(float));
                 }
 
                 //datas inport
@@ -1878,6 +1903,7 @@ int main (void){
                 loss += answer_arr[i] * logf(output_layer[i] + 1e-8f);
             }
             loss = -loss;
+            
             //L2 regularization
             loss += (regularization_rate / 2.0f) *f_arr_squared_sum(weight_to_output_layer, n_of_output_layer * n_of_first_hidden_layer);
             loss += (regularization_rate / 2.0f) *f_arr_squared_sum(weight_to_first_hidden_layer, n_of_first_hidden_layer * n_of_input_layer);
@@ -1889,7 +1915,9 @@ int main (void){
             {
                 loss += (regularization_rate / 2.0f) *f_arr_squared_sum(second_conv_filter[c].filter, filter_hight * filter_width);   
             }
+            
             avg_loss += loss;
+            
             if (find_max_index(output_layer, n_of_output_layer) == answer)
             {
                 ++hit;
@@ -1897,6 +1925,7 @@ int main (void){
         }
         printf("at epoch%d, test has finished. average loss:%f, hit rate: %f%%\n", epoch_loop+1, avg_loss / 10000, (float)hit/100);
         fprintf(fp, "%f,%f\n", avg_loss / 10000, (float)hit/100);
+        avg_loss = 0.0f;
     }
 
     //end
@@ -1979,10 +2008,12 @@ int main (void){
     free(velocity_grad_buffer_conv_b1t);
     free(velocity_grad_buffer_conv_b2t);
 
+    //destroy mutex
+    pthread_mutex_destroy(&mutex);
+
     //free workspace
     free_workspace(ws, num_threads);
 
-    //destroy mutex
-    pthread_mutex_destroy(&mutex);
+    printf("exit\n");
     return 0;
 }
