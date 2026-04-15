@@ -10,21 +10,21 @@
 #include <immintrin.h>
 
 // ブロックサイズ（L1/L2キャッシュサイズに応じて調整）
-#define BLOCK_H 16
-#define BLOCK_W 16
+#define BLOCK_H 128
+#define BLOCK_W 128
 
 #define PI 3.14159265358979
-#define n_of_input_layer 1600
-#define n_of_first_hidden_layer 128
+#define n_of_input_layer 800
+#define n_of_first_hidden_layer 64
 #define n_of_output_layer 10
 #define learning_rate 0.001
 #define momentum_beta 0.9f
-#define batch_size 480
+#define batch_size 40
 #define epoch 20
 #define debug 1
 #define neck_check 0
 #define threaded true
-#define num_threads 12
+#define num_threads 8
 #define regularization_rate 0.0005f
 #define dropout 0
 #define dropout_rate 0.3f
@@ -33,13 +33,13 @@
 //convolutional layer param
 #define filter_hight 3
 #define filter_width 3
-#define n_of_first_channel 32
-#define n_of_second_channel 64
+#define n_of_first_channel 16
+#define n_of_second_channel 32
 
-#define train_images "train-images-fashion.idx3-ubyte"
-#define train_labels "train-labels-fashion.idx1-ubyte"
-#define test_images "t10k-images-fashion.idx3-ubyte"
-#define test_labels "t10k-labels-fashion.idx1-ubyte"
+#define train_images "train-images.idx3-ubyte"
+#define train_labels "train-labels.idx1-ubyte"
+#define test_images "t10k-images.idx3-ubyte"
+#define test_labels "t10k-labels.idx1-ubyte"
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -951,6 +951,63 @@ void forward_pass(
     softmax(z_out, a_out, n_of_output_layer);
 }
 
+void backward_pass (
+    float *delta_4, float *a_out, float *answer_arr, float *a_1, float *grad_w4, float *grad_b4,
+    float *wout, float *z_1, float *delta_1, float *a_0, float *grad_w1, float *grad_b1,
+    float *w1, float *delta_in, maxpool_layer_t *backward_second_maxpool, conv_layer_t *backward_second_conv, maxpool_layer_t *second_maxpooling_layer,
+    conv_layer_t *second_conv_layer_pre_activation, float *grad_to_b_conv2, conv_filter_t *grad_to_second_conv_filter, maxpool_layer_t *first_maxpooling_layer, maxpool_layer_t *backward_first_maxpool, conv_filter_t *second_conv_filter,
+    conv_layer_t *backward_first_conv, conv_layer_t *first_conv_layer_pre_activation, float *grad_to_b_conv1, conv_filter_t *grad_to_first_conv_filter, float *a_in
+){
+    compute_output_delta(delta_4, a_out, answer_arr, n_of_output_layer);
+
+    weight_grad(delta_4, a_1, grad_w4, n_of_output_layer, n_of_first_hidden_layer);
+    grad_bias(delta_4, grad_b4, n_of_output_layer);
+
+    compute_hidden_delta(delta_4, wout, z_1, delta_1, n_of_first_hidden_layer, n_of_output_layer);
+
+    weight_grad(delta_1, a_0, grad_w1, n_of_first_hidden_layer, n_of_input_layer);
+    grad_bias(delta_1, grad_b1, n_of_first_hidden_layer);
+
+    compute_hidden_activation_delta(delta_1, w1, delta_in, n_of_input_layer, n_of_first_hidden_layer);
+
+    unflatten(backward_second_maxpool, delta_in, n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2, ((28 - filter_width + 1)/2 - filter_width + 1)/2);
+            
+    maxpool_backward(backward_second_maxpool, backward_second_conv, second_maxpooling_layer, n_of_second_channel, (28 - filter_hight + 1)/2 - filter_hight + 1, (28 - filter_width + 1)/2 - filter_width + 1, 2);
+            
+    for (size_t i = 0; i < n_of_second_channel; i++)
+    {
+        backward_relu(backward_second_conv[i].layer, backward_second_conv[i].layer, second_conv_layer_pre_activation[i].layer, ((28 - filter_hight + 1)/2 - filter_hight + 1) * ((28 - filter_width + 1)/2 - filter_width + 1));
+    }
+
+    //バイアス勾配
+    for (size_t i = 0; i < n_of_second_channel; i++)
+    {
+        grad_to_b_conv2[i] = float_array_sum(backward_second_conv[i].layer, ((28 - filter_hight + 1)/2 - filter_hight + 1) * ((28 - filter_width + 1)/2 - filter_width + 1));
+    }
+
+    //フィルター勾配
+    backward_conv_filter_multi_to_multi(grad_to_second_conv_filter, first_maxpooling_layer, backward_second_conv, n_of_second_channel, n_of_first_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
+            
+    //前層アクティベーション勾配
+    backward_conv_layer(backward_first_maxpool, backward_second_conv, second_conv_filter, n_of_first_channel, n_of_second_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
+            
+    maxpool_backward(backward_first_maxpool, backward_first_conv, first_maxpooling_layer, n_of_first_channel, 28 - filter_hight + 1, 28 - filter_width + 1, 2);
+            
+    for (size_t i = 0; i < n_of_first_channel; i++)
+    {
+        backward_relu(backward_first_conv[i].layer, backward_first_conv[i].layer, first_conv_layer_pre_activation[i].layer, (28 - filter_hight + 1) * (28 - filter_width + 1));
+    }
+
+    //バイアス勾配
+    for (size_t i = 0; i < n_of_first_channel; i++)
+    {
+        grad_to_b_conv1[i] = float_array_sum(backward_first_conv[i].layer, (28 - filter_hight + 1) * (28 - filter_width + 1));
+    }
+
+    //フィルター勾配
+    backward_conv_filter_single_to_multi(grad_to_first_conv_filter, a_in, backward_first_conv, n_of_first_channel, 28, 28);
+}
+
 void* training_threaded (void* arg){
     //standby section
     thread_workspace_t* datas = (thread_workspace_t*)arg;
@@ -988,55 +1045,13 @@ void* training_threaded (void* arg){
             loss = -loss;
 
             //backward pass
-            compute_output_delta(datas->delta_4, datas->a_out, answer_arr, n_of_output_layer);
-
-            weight_grad(datas->delta_4, datas->a_1, datas->grad_w4, n_of_output_layer, n_of_first_hidden_layer);
-            grad_bias(datas->delta_4, datas->grad_b4, n_of_output_layer);
-
-            compute_hidden_delta(datas->delta_4, datas->wout, datas->z_1, datas->delta_1, n_of_first_hidden_layer, n_of_output_layer);
-
-            weight_grad(datas->delta_1, datas->a_0, datas->grad_w1, n_of_first_hidden_layer, n_of_input_layer);
-            grad_bias(datas->delta_1, datas->grad_b1, n_of_first_hidden_layer);
-
-            compute_hidden_activation_delta(datas->delta_1, datas->w1, datas->delta_in, n_of_input_layer, n_of_first_hidden_layer);
-
-            unflatten(datas->backward_second_maxpool, datas->delta_in, n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2, ((28 - filter_width + 1)/2 - filter_width + 1)/2);
-            
-            maxpool_backward(datas->backward_second_maxpool, datas->backward_second_conv, datas->second_maxpooling_layer, n_of_second_channel, (28 - filter_hight + 1)/2 - filter_hight + 1, (28 - filter_width + 1)/2 - filter_width + 1, 2);
-            
-            for (size_t i = 0; i < n_of_second_channel; i++)
-            {
-                backward_relu(datas->backward_second_conv[i].layer, datas->backward_second_conv[i].layer, datas->second_conv_layer_pre_activation[i].layer, ((28 - filter_hight + 1)/2 - filter_hight + 1) * ((28 - filter_width + 1)/2 - filter_width + 1));
-            }
-
-            //バイアス勾配
-            for (size_t i = 0; i < n_of_second_channel; i++)
-            {
-                datas->grad_to_b_conv2[i] = float_array_sum(datas->backward_second_conv[i].layer, ((28 - filter_hight + 1)/2 - filter_hight + 1) * ((28 - filter_width + 1)/2 - filter_width + 1));
-            }
-
-            //フィルター勾配
-            backward_conv_filter_multi_to_multi(datas->grad_to_second_conv_filter, datas->first_maxpooling_layer, datas->backward_second_conv, n_of_second_channel, n_of_first_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
-            
-
-            //前層アクティベーション勾配
-            backward_conv_layer(datas->backward_first_maxpool, datas->backward_second_conv, datas->second_conv_filter, n_of_first_channel, n_of_second_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
-            
-            maxpool_backward(datas->backward_first_maxpool, datas->backward_first_conv, datas->first_maxpooling_layer, n_of_first_channel, 28 - filter_hight + 1, 28 - filter_width + 1, 2);
-            
-            for (size_t i = 0; i < n_of_first_channel; i++)
-            {
-                backward_relu(datas->backward_first_conv[i].layer, datas->backward_first_conv[i].layer, datas->first_conv_layer_pre_activation[i].layer, (28 - filter_hight + 1) * (28 - filter_width + 1));
-            }
-
-            //バイアス勾配
-            for (size_t i = 0; i < n_of_first_channel; i++)
-            {
-                datas->grad_to_b_conv1[i] = float_array_sum(datas->backward_first_conv[i].layer, (28 - filter_hight + 1) * (28 - filter_width + 1));
-            }
-
-            //フィルター勾配
-            backward_conv_filter_single_to_multi(datas->grad_to_first_conv_filter, datas->a_in, datas->backward_first_conv, n_of_first_channel, 28, 28);
+            backward_pass(
+                datas->delta_4, datas->a_out, answer_arr, datas->a_1, datas->grad_w4, datas->grad_b4, datas->wout, datas->z_1, datas->delta_1,
+                datas->a_0, datas->grad_w1, datas->grad_b1, datas->w1, datas->delta_in, datas->backward_second_maxpool,
+                datas->backward_second_conv, datas->second_maxpooling_layer, datas->second_conv_layer_pre_activation, datas->grad_to_b_conv2,
+                datas->grad_to_second_conv_filter, datas->first_maxpooling_layer, datas->backward_first_maxpool, datas->second_conv_filter, datas->backward_first_conv,
+                datas->first_conv_layer_pre_activation, datas->grad_to_b_conv1, datas->grad_to_first_conv_filter, datas->a_in
+            );
 
             for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
             {
@@ -1596,58 +1611,11 @@ int main (void){
             avg_loss += loss;
             
             //backward pass
-            compute_output_delta(delta_4, output_layer, answer_arr, n_of_output_layer);
-
-            weight_grad(delta_4, first_hidden_layer, grad_to_w4, n_of_output_layer, n_of_first_hidden_layer);
-            grad_bias(delta_4, grad_to_b4, n_of_output_layer);
-
-            compute_hidden_delta(delta_4, weight_to_output_layer, z1, delta_1, n_of_first_hidden_layer, n_of_output_layer);
-            if (dropout == 1) {apply_dropout(delta_1, dropout_mask_for_first_hidden_layer, batch, n_of_first_hidden_layer);}
-
-            weight_grad(delta_1, input_layer, grad_to_w1, n_of_first_hidden_layer, n_of_input_layer);
-            grad_bias(delta_1, grad_to_b1, n_of_first_hidden_layer);
-
-            compute_hidden_activation_delta(delta_1, weight_to_first_hidden_layer, delta_in, n_of_input_layer, n_of_first_hidden_layer);
-
-            unflatten(backward_second_maxpool, delta_in, n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2, ((28 - filter_width + 1)/2 - filter_width + 1)/2);
-            
-            maxpool_backward(backward_second_maxpool, backward_second_conv, second_maxpooling_layer, n_of_second_channel, (28 - filter_hight + 1)/2 - filter_hight + 1, (28 - filter_width + 1)/2 - filter_width + 1, 2);
-            
-            for (size_t i = 0; i < n_of_second_channel; i++)
-            {
-                backward_relu(backward_second_conv[i].layer, backward_second_conv[i].layer, second_conv_layer_pre_activation[i].layer, ((28 - filter_hight + 1)/2 - filter_hight + 1) * ((28 - filter_width + 1)/2 - filter_width + 1));
-            }
-
-            //バイアス勾配
-            for (size_t i = 0; i < n_of_second_channel; i++)
-            {
-                grad_to_b_conv2[i] = float_array_sum(backward_second_conv[i].layer, ((28 - filter_hight + 1)/2 - filter_hight + 1) * ((28 - filter_width + 1)/2 - filter_width + 1));
-            }
-
-            //フィルター勾配
-            backward_conv_filter_multi_to_multi(grad_to_second_conv_filter, first_maxpooling_layer, backward_second_conv, n_of_second_channel, n_of_first_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
-            
-
-            //前層アクティベーション勾配
-            backward_conv_layer(backward_first_maxpool, backward_second_conv, second_conv_filter, n_of_first_channel, n_of_second_channel, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2);
-            
-            maxpool_backward(backward_first_maxpool, backward_first_conv, first_maxpooling_layer, n_of_first_channel, 28 - filter_hight + 1, 28 - filter_width + 1, 2);
-            
-            for (size_t i = 0; i < n_of_first_channel; i++)
-            {
-                backward_relu(backward_first_conv[i].layer, backward_first_conv[i].layer, first_conv_layer_pre_activation[i].layer, (28 - filter_hight + 1) * (28 - filter_width + 1));
-            }
-
-            //バイアス勾配
-            for (size_t i = 0; i < n_of_first_channel; i++)
-            {
-                grad_to_b_conv1[i] = float_array_sum(backward_first_conv[i].layer, (28 - filter_hight + 1) * (28 - filter_width + 1));
-            }
-
-            //フィルター勾配
-            backward_conv_filter_single_to_multi(grad_to_first_conv_filter, input_image, backward_first_conv, n_of_first_channel, 28, 28);
-            
-
+            backward_pass(
+                delta_4, output_layer, answer_arr, first_hidden_layer, grad_to_w4, grad_to_b4, weight_to_output_layer, z1, delta_1, input_layer, grad_to_w1, grad_to_b1, weight_to_first_hidden_layer, delta_in,
+                backward_second_maxpool, backward_second_conv, second_maxpooling_layer, second_conv_layer_pre_activation, grad_to_b_conv2, grad_to_second_conv_filter, first_maxpooling_layer, backward_first_maxpool,
+                second_conv_filter, backward_first_conv, first_conv_layer_pre_activation, grad_to_b_conv1, grad_to_first_conv_filter, input_image
+            );
 
             for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
             {
