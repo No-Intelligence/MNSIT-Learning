@@ -20,7 +20,7 @@
 #define learning_rate 0.001
 #define momentum_beta 0.9f
 #define batch_size 40
-#define epoch 20
+#define epoch 1
 #define debug 1
 #define neck_check 0
 #define threaded true
@@ -1796,45 +1796,11 @@ int main (void){
             answer = fgetc(test_data_labels);
 
             //forward pass
-            convolution_single_to_multi(input_image, first_conv_filter, first_conv_layer_pre_activation, 28, 28, n_of_first_channel);
-            add_bias_conv(first_conv_layer_pre_activation, first_conv_bias, n_of_first_channel, (28 - filter_hight + 1), (28 - filter_width + 1));
-            for (size_t i = 0; i < n_of_first_channel; i++)
-            {
-                relu(first_conv_layer_pre_activation[i].layer, first_conv_layer_activation[i].layer, (28 - filter_hight + 1) * (28 - filter_width + 1));
-            }
-
-            maxpool(first_conv_layer_activation, first_maxpooling_layer, n_of_first_channel, (28 - filter_hight + 1), (28 - filter_width + 1), 2);
-            
-            convolution_multi_to_multi(first_maxpooling_layer, second_conv_filter, second_conv_layer_pre_activation, (28 - filter_hight + 1)/2, (28 - filter_width + 1)/2, n_of_first_channel, n_of_second_channel);
-            add_bias_conv(second_conv_layer_pre_activation, second_conv_bias, n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1), ((28 - filter_width + 1)/2 - filter_width + 1));
-            for (size_t i = 0; i < n_of_second_channel; i++)
-            {
-                relu(second_conv_layer_pre_activation[i].layer, second_conv_layer_activation[i].layer, ((28 - filter_hight + 1)/2 - filter_hight + 1) * ((28 - filter_width + 1)/2 - filter_width + 1));
-            }
-
-            maxpool(second_conv_layer_activation, second_maxpooling_layer, n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1), ((28 - filter_width + 1)/2 - filter_width + 1), 2);
-
-            flatten(input_layer, second_maxpooling_layer, n_of_second_channel, ((28 - filter_hight + 1)/2 - filter_hight + 1)/2, ((28 - filter_width + 1)/2 - filter_width + 1)/2);
-            
-            if (avx2 == true) {
-                mat_vec_mul(weight_to_first_hidden_layer, input_layer, z1, n_of_first_hidden_layer, n_of_input_layer);
-                vec_add_avx(z1, bias_of_first_hidden_layer, z1, n_of_first_hidden_layer);
-            }
-            else {
-                mmul(z1, input_layer, weight_to_first_hidden_layer, n_of_first_hidden_layer, n_of_input_layer);
-                add_bias(z1, bias_of_first_hidden_layer, n_of_first_hidden_layer);
-            }
-            relu(z1, first_hidden_layer, n_of_first_hidden_layer);
-
-            if (avx2 == true) {
-                mat_vec_mul(weight_to_output_layer, first_hidden_layer, zout, n_of_output_layer, n_of_first_hidden_layer);
-                vec_add_avx(zout, bias_of_output_layer, zout, n_of_output_layer);
-            }
-            else {
-                mmul(zout, first_hidden_layer, weight_to_output_layer, n_of_output_layer, n_of_first_hidden_layer);
-                add_bias(zout, bias_of_output_layer, n_of_output_layer);
-            }
-            softmax(zout, output_layer, n_of_output_layer);
+            forward_pass(
+                input_image, first_conv_layer_pre_activation, first_conv_filter, first_conv_bias, first_conv_layer_activation, first_maxpooling_layer, 
+                second_conv_filter, second_conv_layer_pre_activation, second_conv_bias, second_conv_layer_activation, second_maxpooling_layer, 
+                input_layer, z1, weight_to_first_hidden_layer, bias_of_first_hidden_layer, first_hidden_layer, zout, weight_to_output_layer, bias_of_output_layer, output_layer
+            );
 
             for (int i = 0; i < n_of_output_layer; i++)
             {
@@ -1871,6 +1837,34 @@ int main (void){
         fprintf(fp, "%f,%f\n", avg_loss / 10000, (float)hit/100);
         avg_loss = 0.0f;
     }
+
+    FILE *weight;
+    weight = fopen("weight", "wb");
+    if (weight == NULL)
+    {
+        printf("weight error\n");
+        return 9;
+    }
+    fseek(weight, 0, SEEK_SET);
+    for (size_t i = 0; i < n_of_first_channel; i++)
+    {
+        fwrite(first_conv_filter[i].filter, sizeof(float), filter_hight * filter_width, weight);
+    }
+    fwrite(first_conv_bias, sizeof(float), n_of_first_channel, weight);
+    
+    for (size_t i = 0; i < n_of_first_channel * n_of_second_channel; i++)
+    {
+        fwrite(second_conv_filter[i].filter, sizeof(float), filter_hight * filter_width, weight);
+    }
+    fwrite(second_conv_bias, sizeof(float), n_of_second_channel, weight);
+
+    fwrite(weight_to_first_hidden_layer, sizeof(float), n_of_input_layer * n_of_first_hidden_layer, weight);
+    fwrite(bias_of_first_hidden_layer, sizeof(float), n_of_first_hidden_layer, weight);
+
+    fwrite(weight_to_output_layer, sizeof(float), n_of_first_hidden_layer * n_of_output_layer, weight);
+    fwrite(bias_of_output_layer, sizeof(float), n_of_output_layer, weight);
+
+    fclose(weight);
 
     //end
     free(input_image);
