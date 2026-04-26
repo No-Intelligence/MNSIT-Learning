@@ -14,17 +14,17 @@
 #define BLOCK_W 128
 
 #define PI 3.14159265358979
-#define n_of_input_layer 800
-#define n_of_first_hidden_layer 64
+#define n_of_input_layer 1600
+#define n_of_first_hidden_layer 128
 #define n_of_output_layer 10
 #define learning_rate 0.001
 #define momentum_beta 0.9f
-#define batch_size 40
+#define batch_size 600
 #define epoch 1
 #define debug 1
 #define neck_check 0
 #define threaded true
-#define num_threads 8
+#define num_threads 12
 #define regularization_rate 0.0005f
 #define dropout 0
 #define dropout_rate 0.3f
@@ -33,15 +33,22 @@
 //convolutional layer param
 #define filter_hight 3
 #define filter_width 3
-#define n_of_first_channel 16
-#define n_of_second_channel 32
+#define n_of_first_channel 32
+#define n_of_second_channel 64
 
 #define train_images "train-images.idx3-ubyte"
 #define train_labels "train-labels.idx1-ubyte"
 #define test_images "t10k-images.idx3-ubyte"
 #define test_labels "t10k-labels.idx1-ubyte"
 
+
+//スレッド管理用
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+pthread_barrier_t barrier;
+bool work_available = false;
+int n_finished_work = 0;
+bool terminate_flag = false;
 
 typedef struct {
     float *layer;
@@ -1014,8 +1021,25 @@ void* training_threaded (void* arg){
     int answer;
     float answer_arr[10];
     float loss;
-    
-    //compute section
+
+    while (true)
+    {
+        pthread_mutex_lock(&mutex);
+
+        //stay
+        while (!work_available)
+        {
+            if (terminate_flag)
+            {
+                pthread_mutex_unlock(&mutex);
+                return 0;
+            }
+            
+            pthread_cond_wait(&cond, &mutex);
+        }
+        pthread_mutex_unlock(&mutex);
+
+        //compute section
         for (int loop = 0; loop < batch_size / num_threads; loop++){
 
             //inputting data
@@ -1105,6 +1129,7 @@ void* training_threaded (void* arg){
         }
 
         pthread_mutex_lock(&mutex);
+
         for (size_t i = 0; i < n_of_input_layer * n_of_first_hidden_layer; i++)
         {
             datas->return_grad_w1t[i] += datas->grad_w1t[i];
@@ -1153,8 +1178,22 @@ void* training_threaded (void* arg){
         {
             datas->return_grad_to_b_conv2_t[i] += datas->grad_to_b_conv2_t[i];
         }
+
         pthread_mutex_unlock(&mutex);
-        return NULL;
+
+        pthread_mutex_lock(&mutex);
+        n_finished_work++;
+        if (n_finished_work == num_threads)
+        {
+            pthread_cond_signal(&cond);
+        }
+        pthread_mutex_unlock(&mutex);
+
+        work_available = false;
+        
+    }
+
+    return NULL;
 }
 
 int main (void){
@@ -1307,18 +1346,52 @@ int main (void){
     fp = fopen("test.csv", "w");
     fprintf(fp, ",train loss,test loss, hit rate\n");
 
-    //offset data
-    fseek(test_data_images, 16, 0);
-    fseek(test_data_labels, 8, 0);
+    //file buffering
+    uint8_t *training_image_buffer = malloc(60000 * 784 * sizeof(uint8_t));
+    uint8_t *training_label_buffer = malloc(60000 * sizeof(uint8_t));
+    fseek(learning_data_images, 16, SEEK_SET);
+    fread(training_image_buffer, sizeof(uint8_t), 60000 * 784, learning_data_images);
+    fseek(learning_data_labels, 8, SEEK_SET);
+    fread(training_label_buffer, sizeof(uint8_t), 60000, learning_data_labels);
+
+    //standby section
+    for (size_t i = 0; i < num_threads; i++)
+    {
+        ws[i].w1 = weight_to_first_hidden_layer;
+        ws[i].wout = weight_to_output_layer;
+        ws[i].b1 = bias_of_first_hidden_layer;
+        ws[i].bout = bias_of_output_layer;
+        ws[i].first_conv_filter = first_conv_filter;
+        ws[i].first_conv_bias = first_conv_bias;
+        ws[i].second_conv_filter = second_conv_filter;
+        ws[i].second_conv_bias = second_conv_bias;
+        ws[i].return_grad_b1t = grad_to_b1t;
+        ws[i].return_grad_b4t = grad_to_b4t;
+        ws[i].return_grad_to_b_conv1_t = grad_to_b_conv1_t;
+        ws[i].return_grad_to_b_conv2_t = grad_to_b_conv2_t;
+        ws[i].return_grad_to_first_conv_filter_t = grad_to_first_conv_filter_t;
+        ws[i].return_grad_to_second_conv_filter_t = grad_to_second_conv_filter_t;
+        ws[i].return_grad_w1t = grad_to_w1t;
+        ws[i].return_grad_w4t = grad_to_w4t;
+    }
 
     memset(grad_to_w1, 0, n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
     memset(grad_to_w4, 0, n_of_first_hidden_layer * n_of_output_layer * sizeof(float));
     memset(grad_to_b1, 0, n_of_first_hidden_layer * sizeof(float));
     memset(grad_to_b4, 0, n_of_output_layer * sizeof(float));
-    for (int i = 0; i < n_of_first_channel; i++)
+    for (int i = 0; i < n_of_first_channel; i++){
         memset(grad_to_first_conv_filter[i].filter, 0, filter_hight * filter_width * sizeof(float));
-    for (int i = 0; i < n_of_first_channel * n_of_second_channel; i++)
+    }
+    for (int i = 0; i < n_of_first_channel * n_of_second_channel; i++){
         memset(grad_to_second_conv_filter[i].filter, 0, filter_hight * filter_width * sizeof(float));
+    }
+
+    //create thread
+    for (size_t i = 0; i < num_threads; i++)
+    {
+        pthread_create(&th[i], NULL, training_threaded, &ws[i]);
+    }
+
 
     printf("Training start\n");
     for (int epoch_loop = 0; epoch_loop < epoch; epoch_loop++){
@@ -1329,34 +1402,7 @@ int main (void){
         //learning section
         if (threaded == 1)
         {
-            //standby section
-            for (size_t i = 0; i < num_threads; i++)
-            {
-                ws[i].w1 = weight_to_first_hidden_layer;
-                ws[i].wout = weight_to_output_layer;
-                ws[i].b1 = bias_of_first_hidden_layer;
-                ws[i].bout = bias_of_output_layer;
-                ws[i].first_conv_filter = first_conv_filter;
-                ws[i].first_conv_bias = first_conv_bias;
-                ws[i].second_conv_filter = second_conv_filter;
-                ws[i].second_conv_bias = second_conv_bias;
-                ws[i].return_grad_b1t = grad_to_b1t;
-                ws[i].return_grad_b4t = grad_to_b4t;
-                ws[i].return_grad_to_b_conv1_t = grad_to_b_conv1_t;
-                ws[i].return_grad_to_b_conv2_t = grad_to_b_conv2_t;
-                ws[i].return_grad_to_first_conv_filter_t = grad_to_first_conv_filter_t;
-                ws[i].return_grad_to_second_conv_filter_t = grad_to_second_conv_filter_t;
-                ws[i].return_grad_w1t = grad_to_w1t;
-                ws[i].return_grad_w4t = grad_to_w4t;
-            }
-
-            //file buffering
-            uint8_t *training_image_buffer = malloc(60000 * 784 * sizeof(uint8_t));
-            uint8_t *training_label_buffer = malloc(60000 * sizeof(uint8_t));
-            fseek(learning_data_images, 16, SEEK_SET);
-            fread(training_image_buffer, sizeof(uint8_t), 60000 * 784, learning_data_images);
-            fseek(learning_data_labels, 8, SEEK_SET);
-            fread(training_label_buffer, sizeof(uint8_t), 60000, learning_data_labels);
+            //マルチスレッド処理有効化学習処理
 
             //training section
             for (int loop = 0; loop < 60000/batch_size; loop++)
@@ -1370,6 +1416,7 @@ int main (void){
                 memset(grad_to_w4t, 0, n_of_first_hidden_layer * n_of_output_layer * sizeof(float));
                 memset(grad_to_b1t, 0, n_of_first_hidden_layer * sizeof(float));
                 memset(grad_to_b4t, 0, n_of_output_layer * sizeof(float));
+
                 // conv 系のグローバル勾配も同様にゼロクリア
                 for (int c = 0; c < n_of_first_channel; c++)
                     memset(grad_to_first_conv_filter_t[c].filter, 0, filter_hight * filter_width * sizeof(float));
@@ -1409,7 +1456,6 @@ int main (void){
                     }
                 
                 }
-
                 for (size_t i = 0; i < num_threads; i++) {
                     for (size_t c = 0; c < n_of_first_channel; c++) {
                         memset(ws[i].grad_to_first_conv_filter_t[c].filter, 0,
@@ -1437,18 +1483,22 @@ int main (void){
                     }
                     
                 }
-                
-                //compute grad
-                for (size_t i = 0; i < num_threads; i++)
-                {
-                    pthread_create(&th[i], NULL, training_threaded, &ws[i]);
-                }
+
+                //work broadcast
+                pthread_mutex_lock(&mutex);
+                work_available = true;
+                pthread_cond_broadcast(&cond);
+                pthread_mutex_unlock(&mutex);
+
                 
                 //wait
-                for (size_t i = 0; i < num_threads; i++)
+                pthread_mutex_lock(&mutex);
+                while (n_finished_work < num_threads)
                 {
-                    pthread_join(th[i], NULL);
+                    pthread_cond_wait(&cond, &mutex);
                 }
+                pthread_mutex_unlock(&mutex);
+                n_finished_work = 0;
                 
 
                 //update params
@@ -1553,19 +1603,10 @@ int main (void){
                 }
             }
 
-            free(training_image_buffer);
-            free(training_label_buffer);
         }
         else {
             start = clock();
             int batch = 0;
-            uint8_t *training_image_buffer = malloc(60000 * 784 * sizeof(uint8_t));
-            uint8_t *training_label_buffer = malloc(60000 * sizeof(uint8_t));
-            fseek(learning_data_images, 16, SEEK_SET);
-            fread(training_image_buffer, sizeof(uint8_t), 60000 * 784, learning_data_images);
-            fseek(learning_data_labels, 8, SEEK_SET);
-            fread(training_label_buffer, sizeof(uint8_t), 60000, learning_data_labels);
-        
 
             generate_dropout_mask(dropout_mask_for_first_hidden_layer, n_of_first_hidden_layer * (60000/batch_size));
 
@@ -1771,8 +1812,6 @@ int main (void){
             }
         }
         end = clock();
-        free(training_image_buffer);
-        free(training_label_buffer);
         }
         printf("at epoch%d, training has finished. average loss:%f\n", epoch_loop+1, avg_loss / 60000);
         fprintf(fp, "epoch%d,%f,", epoch_loop+1, avg_loss / 60000);
@@ -1866,6 +1905,17 @@ int main (void){
 
     fclose(weight);
 
+    //thread terminate
+    terminate_flag = true;
+    pthread_mutex_lock(&mutex);
+    pthread_cond_broadcast(&cond);   // 全スレッドを起床
+    pthread_mutex_unlock(&mutex);
+    for (size_t i = 0; i < num_threads; i++)
+    {
+        pthread_join(th[i], NULL);
+    }
+
+
     //end
     free(input_image);
     free(input_layer);
@@ -1936,6 +1986,10 @@ int main (void){
     fclose(test_data_labels);
     fclose(fp);
 
+    //free training files
+    free(training_image_buffer);
+    free(training_label_buffer);
+
     //free momentum buffer
     free(velocity_grad_buffer_w1t);
     free(velocity_grad_buffer_w4t);
@@ -1949,6 +2003,9 @@ int main (void){
     //destroy mutex
     pthread_mutex_destroy(&mutex);
 
+    //destroy cond
+    pthread_cond_destroy(&cond);
+    
     //free workspace
     free_workspace(ws, num_threads);
 
