@@ -10,8 +10,8 @@
 #include <immintrin.h>
 
 // ブロックサイズ（L1/L2キャッシュサイズに応じて調整）
-#define BLOCK_H 128
-#define BLOCK_W 128
+#define BLOCK_H 64
+#define BLOCK_W 64
 
 #define PI 3.14159265358979
 #define n_of_input_layer 1600
@@ -36,10 +36,10 @@
 #define n_of_first_channel 32
 #define n_of_second_channel 64
 
-#define train_images "train-images.idx3-ubyte"
-#define train_labels "train-labels.idx1-ubyte"
-#define test_images "t10k-images.idx3-ubyte"
-#define test_labels "t10k-labels.idx1-ubyte"
+#define train_images "train-images-fashion.idx3-ubyte"
+#define train_labels "train-labels-fashion.idx1-ubyte"
+#define test_images "t10k-images-fashion.idx3-ubyte"
+#define test_labels "t10k-labels-fashion.idx1-ubyte"
 
 
 //スレッド管理用
@@ -97,6 +97,7 @@ typedef struct {
     //return buffer
     float *return_grad_w1t, *return_grad_w4t, *return_grad_b1t, *return_grad_b4t, *return_grad_to_b_conv1_t, *return_grad_to_b_conv2_t;
     conv_filter_t *return_grad_to_first_conv_filter_t, *return_grad_to_second_conv_filter_t;
+    float *return_avg_loss;
 
 } thread_workspace_t;
 
@@ -1021,6 +1022,7 @@ void* training_threaded (void* arg){
     int answer;
     float answer_arr[10];
     float loss;
+    float avg_loss = 0.0f;
 
     while (true)
     {
@@ -1067,6 +1069,18 @@ void* training_threaded (void* arg){
                 loss += answer_arr[i] * logf(datas->a_out[i] + 1e-8f);
             }
             loss = -loss;
+            //L2 regularization
+            loss += (regularization_rate / 2.0f) *f_arr_squared_sum(datas->wout, n_of_output_layer * n_of_first_hidden_layer);
+            loss += (regularization_rate / 2.0f) *f_arr_squared_sum(datas->w1, n_of_first_hidden_layer * n_of_input_layer);
+            for (size_t c = 0; c < n_of_first_channel; c++)
+            {
+                loss += (regularization_rate / 2.0f) *f_arr_squared_sum(datas->first_conv_filter[c].filter, filter_hight * filter_width);   
+            }
+            for (size_t c = 0; c < n_of_first_channel * n_of_second_channel; c++)
+            {
+                loss += (regularization_rate / 2.0f) *f_arr_squared_sum(datas->second_conv_filter[c].filter, filter_hight * filter_width);   
+            }
+            avg_loss += loss;
 
             //backward pass
             backward_pass(
@@ -1179,7 +1193,11 @@ void* training_threaded (void* arg){
             datas->return_grad_to_b_conv2_t[i] += datas->grad_to_b_conv2_t[i];
         }
 
+        *datas->return_avg_loss += avg_loss;
+        avg_loss = 0.0f;
+
         pthread_mutex_unlock(&mutex);
+        
 
         pthread_mutex_lock(&mutex);
         n_finished_work++;
@@ -1373,6 +1391,7 @@ int main (void){
         ws[i].return_grad_to_second_conv_filter_t = grad_to_second_conv_filter_t;
         ws[i].return_grad_w1t = grad_to_w1t;
         ws[i].return_grad_w4t = grad_to_w4t;
+        ws[i].return_avg_loss = &avg_loss;
     }
 
     memset(grad_to_w1, 0, n_of_input_layer * n_of_first_hidden_layer * sizeof(float));
