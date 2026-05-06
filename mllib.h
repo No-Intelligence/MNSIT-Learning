@@ -11,21 +11,35 @@ typedef struct {
     float *bias;
 } parameter_t;
 
+typedef enum {
+    ACTIVATION_RELU,
+    ACTIVATION_SOFTMAX
+} activation_t;
+
 typedef struct {
     layer_t *layers;
     parameter_t *parameters;
+    activation_t *activations;
+    int n_layers;
+    int *layer_size;
 } neural_network_t;
 
-layer_t* alloc_layer (int n_layer_units);
+layer_t* alloc_layer (int n_layers, int *layer_size);
 
-void free_layer (layer_t *p, int n_layer_units);
+void free_layer (layer_t *layer, int n_layers, int *layer_size);
 
-parameter_t* alloc_parameter (int n_weight, int n_bias);
+parameter_t* alloc_parameter (int n_layers, int *layer_size);
 
-void free_parameter (parameter_t *p, int n_weight, int n_bias);
+void free_parameter (parameter_t *parameter, int n_layers, int *layer_size);
 
-neural_network_t* alloc_neural_network (int n_layers, int *layer_units);
+/**
+ * 全結合のニューラルネットワークを作成します。
+ * @param n_layers 入力層・出力層両方を含めた層の数。(int)
+ * @param layer_size 各層のサイズ。(int配列)
+ * @param activations 使用する活性化関数、層の数より一つ少ない(activation配列)
+ */
+neural_network_t* alloc_neural_network (int n_layers, int *layer_size, activation_t *activations);
 
-void free_neural_network (neural_network_t *p, int n_layers, int *layer_units);
+void free_neural_network (neural_network_t *neural_network);
 
 #endif
