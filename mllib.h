@@ -42,4 +42,16 @@ neural_network_t* alloc_neural_network (int n_layers, int *layer_size, activatio
 
 void free_neural_network (neural_network_t *neural_network);
 
+void matrix_arr_mul (float *output_arr, float *input_arr, float *matrix, int n_of_output_arr, int n_of_input_arr);
+
+void add_array (float *operated_arr, float *input_arr, int n_of_arr);
+
+float extract_max (float *input_array, int n_of_input_arr);
+
+void relu (float *input_arr, float *output_arr, int n_of_arr);
+
+void softmax (float *input_arr, float *output_arr, int n_of_arr);
+
+void forward_pass (neural_network_t *neural_network, float *input, float *ouput);
+
 #endif

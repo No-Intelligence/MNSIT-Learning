@@ -1,6 +1,7 @@
 #include "mllib.h"
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 layer_t* alloc_layer (int n_layers, int *layer_size) {
     layer_t *p = calloc(n_layers, sizeof(layer_t));
@@ -59,4 +60,88 @@ void free_neural_network (neural_network_t *neural_network) {
     free(neural_network->layer_size);
     
     free(neural_network);
+}
+
+void matrix_arr_mul (float *output_arr, float *input_arr, float *matrix, int n_of_output_arr, int n_of_input_arr) {
+    memset(output_arr, 0, n_of_output_arr * sizeof(float));
+    
+    for (int i = 0; i < n_of_output_arr; i++)
+    {
+        for (int j = 0; j < n_of_input_arr; j++)
+        {
+            output_arr[i] += matrix[n_of_input_arr * i + j] * input_arr[j];
+        }
+        
+    }
+
+}
+
+void add_array (float *operated_arr, float *input_arr, int n_of_arr) {
+    for (size_t i = 0; i < n_of_arr; i++)
+    {
+        operated_arr[i] += input_arr[i];
+    }
+    
+}
+
+float extract_max (float *input_array, int n_of_input_arr) {
+    float max = input_array[0];
+    for (int i = 0; i < n_of_input_arr; i++)
+    {
+        if (max < input_array[i])
+        {
+            max = input_array[i];
+        }
+        
+    }
+    
+    return max;
+}
+
+void relu (float *input_arr, float *output_arr, int n_of_arr) {
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        output_arr[i] = fmaxf(0, input_arr[i]);
+    }
+
+}
+
+void softmax (float *input_arr, float *output_arr, int n_of_arr) {
+    float max = 0.0, sum = 0.0;
+    float *tmp = malloc(n_of_arr * sizeof(float));
+    max = extract_max(input_arr, n_of_arr);
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        tmp[i] = exp(input_arr[i] - max);
+        sum += tmp[i];
+    }
+    for (int j = 0; j < n_of_arr; j++)
+    {
+        output_arr[j] = tmp[j] / sum;
+    }
+    free(tmp);
+
+}
+
+void forward_pass (neural_network_t *neural_network, float *input, float *output) {
+    memcpy(neural_network->layers[0].activation, input, neural_network->layer_size[0] * sizeof(float));
+
+    for (size_t i = 0; i < neural_network->n_layers - 1; i++)
+    {
+        matrix_arr_mul(neural_network->layers[i + 1].pre_activation, neural_network->layers[i].activation, neural_network->parameters[i].weight, neural_network->layer_size[i + 1], neural_network->layer_size[i]);
+        add_array(neural_network->layers[i + 1].pre_activation, neural_network->parameters[i].bias, neural_network->layer_size[i + 1]);
+        switch (neural_network->activations[i])
+        {
+        case ACTIVATION_RELU:
+            relu(neural_network->layers[i + 1].pre_activation, neural_network->layers[i + 1].activation, neural_network->layer_size[i + 1]);
+            break;
+        
+        case ACTIVATION_SOFTMAX:
+            softmax(neural_network->layers[i + 1].pre_activation, neural_network->layers[i + 1].activation, neural_network->layer_size[i + 1]);
+            break;
+        }
+
+    }
+    memcpy(output, neural_network->layers[neural_network->n_layers - 1].activation, neural_network->layer_size[neural_network->n_layers - 1] * sizeof(float));
+    
 }
