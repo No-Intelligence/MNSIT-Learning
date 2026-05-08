@@ -29,8 +29,8 @@ typedef struct {
     layer_t *layers;
     parameter_t *parameters;
     activation_t *activations;
-    layre_grad_t *delta;
-    param_grad_t *grad;
+    layre_grad_t *layer_grad;
+    param_grad_t *param_grad;
     int n_layers;
     int *layer_size;
 } neural_network_t;
@@ -88,5 +88,6 @@ void parameter_initialize (neural_network_t *neural_network);
 void backward_pass (neural_network_t *neural_network, float *answer);
 
 void updata_param (neural_network_t *neural_network);
+
 
 #endif
