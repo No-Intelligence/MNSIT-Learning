@@ -81,13 +81,13 @@ void compute_weight_grad (float *z_delta, float *previous_activation_arr, float 
 
 void compute_bias_grad (float *input, float *output, int n_of_arr);
 
-void forward_pass (neural_network_t *neural_network, float *input, float *ouput);
+void forward_pass (neural_network_t *neural_network, float *input, float *output);
 
 void parameter_initialize (neural_network_t *neural_network);
 
 void backward_pass (neural_network_t *neural_network, float *answer);
 
-void updata_param (neural_network_t *neural_network);
+void updata_param (neural_network_t *neural_network, float *learning_rate);
 
 
 #endif
