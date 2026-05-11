@@ -89,5 +89,8 @@ void backward_pass (neural_network_t *neural_network, float *answer);
 
 void updata_param (neural_network_t *neural_network, float learning_rate);
 
+void save_neural_network(const neural_network_t *neural_network, const char *filename);
+
+void load_neural_network(neural_network_t *neural_network, const char *filename);
 
 #endif

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 
 layer_t* alloc_layer (int n_layers, int *layer_size) {
     layer_t *p = calloc(n_layers, sizeof(layer_t));
@@ -277,4 +278,83 @@ void updata_param (neural_network_t *neural_network, float learning_rate) {
         }
     }
     
+}
+
+void save_neural_network(const neural_network_t *neural_network, const char *filename) {
+    FILE *fp = fopen(filename, "wb");
+    if (fp == NULL) {
+        return;  // エラー処理（必要なら perror など）
+    }
+
+    // ネットワーク構造を書き込み
+    fwrite(&neural_network->n_layers, sizeof(int), 1, fp);
+    fwrite(neural_network->layer_size, sizeof(int), neural_network->n_layers, fp);
+
+    // 各パラメータを書き込み
+    for (int i = 0; i < neural_network->n_layers - 1; i++) {
+        int weight_count = neural_network->layer_size[i] * neural_network->layer_size[i + 1];
+        int bias_count = neural_network->layer_size[i + 1];
+
+        fwrite(neural_network->parameters[i].weight, sizeof(float), weight_count, fp);
+        fwrite(neural_network->parameters[i].bias, sizeof(float), bias_count, fp);
+    }
+
+    fclose(fp);
+}
+
+void load_neural_network(neural_network_t *neural_network, const char *filename) {
+    FILE *fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        return;  // ファイルが開けない
+    }
+
+    // ファイルのネットワーク構造を読み取り
+    int file_n_layers;
+    if (fread(&file_n_layers, sizeof(int), 1, fp) != 1) {
+        fclose(fp);
+        return;
+    }
+
+    int *file_layer_size = malloc(file_n_layers * sizeof(int));
+    if (file_layer_size == NULL) {
+        fclose(fp);
+        return;
+    }
+    if (fread(file_layer_size, sizeof(int), file_n_layers, fp) != (size_t)file_n_layers) {
+        free(file_layer_size);
+        fclose(fp);
+        return;
+    }
+
+    // 現在のネットワークと比較
+    if (file_n_layers != neural_network->n_layers) {
+        free(file_layer_size);
+        fclose(fp);
+        return;  // 構造不一致
+    }
+    for (int i = 0; i < file_n_layers; i++) {
+        if (file_layer_size[i] != neural_network->layer_size[i]) {
+            free(file_layer_size);
+            fclose(fp);
+            return;  // 構造不一致
+        }
+    }
+    free(file_layer_size);
+
+    // パラメータを読み込んで上書き
+    for (int i = 0; i < neural_network->n_layers - 1; i++) {
+        int weight_count = neural_network->layer_size[i] * neural_network->layer_size[i + 1];
+        int bias_count = neural_network->layer_size[i + 1];
+
+        if (fread(neural_network->parameters[i].weight, sizeof(float), weight_count, fp) != (size_t)weight_count) {
+            fclose(fp);
+            return;  // 読み込みエラー
+        }
+        if (fread(neural_network->parameters[i].bias, sizeof(float), bias_count, fp) != (size_t)bias_count) {
+            fclose(fp);
+            return;
+        }
+    }
+
+    fclose(fp);
 }
