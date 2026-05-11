@@ -7,9 +7,9 @@
 #include <stdint.h>
 #include "mllib.h"
 
-#define n_layers 8
-#define layer_size {784, 512, 256, 128, 64, 32, 16, 10}
-#define activations {ACTIVATION_RELU, ACTIVATION_RELU, ACTIVATION_RELU, ACTIVATION_RELU, ACTIVATION_RELU, ACTIVATION_RELU, ACTIVATION_SOFTMAX}
+#define n_layers 4
+#define layer_size {784, 512, 256, 10}
+#define activations {ACTIVATION_RELU, ACTIVATION_RELU, ACTIVATION_SOFTMAX}
 #define learning_rate 0.001
 
 int load_MNIST_format_image (char *filename, int load_num, float *buffer) {
@@ -58,8 +58,8 @@ int main(int argc, char const *argv[])
 
     float *input_buffer = calloc(60000 * 784, sizeof(float));
     uint8_t *answer_label_buffer = calloc(60000, sizeof(uint8_t));
-    load_MNIST_format_image("train-images-fashion.idx3-ubyte", 60000, input_buffer);
-    load_MNIST_format_label("train-labels-fashion.idx1-ubyte", 60000, answer_label_buffer);
+    load_MNIST_format_image("train-images.idx3-ubyte", 60000, input_buffer);
+    load_MNIST_format_label("train-labels.idx1-ubyte", 60000, answer_label_buffer);
 
     float *input_one_image = calloc(784, sizeof(float));
     float answer_one_label[10];
@@ -78,7 +78,7 @@ int main(int argc, char const *argv[])
 
         forward_pass(nn, input_one_image, output);
         backward_pass(nn, answer_one_label);
-        updata_param(nn, learning_rate);
+        update_param(nn, learning_rate, 0.0005f);
         if (i%3000 == 0)
         {
             printf("%d%%\n", i/600);
@@ -86,8 +86,8 @@ int main(int argc, char const *argv[])
         
     }
 
-    load_MNIST_format_image("t10k-images-fashion.idx3-ubyte", 10000, input_buffer);
-    load_MNIST_format_label("t10k-labels-fashion.idx1-ubyte", 10000, answer_label_buffer);
+    load_MNIST_format_image("t10k-images.idx3-ubyte", 10000, input_buffer);
+    load_MNIST_format_label("t10k-labels.idx1-ubyte", 10000, answer_label_buffer);
 
 
     for (size_t i = 0; i < 10000; i++)
@@ -109,5 +109,6 @@ int main(int argc, char const *argv[])
     free(input_buffer);
     free(answer_label_buffer);
     free(input_one_image);
+    free_neural_network(nn);
     return 0;
 }

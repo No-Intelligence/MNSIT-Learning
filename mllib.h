@@ -59,6 +59,9 @@ void free_param_grad (param_grad_t *param_grad, int n_layers, int *layer_size);
  */
 neural_network_t* alloc_neural_network (int n_layers, int *layer_size, activation_t *activations);
 
+/**
+ * ネットワークを開放・破棄します。
+ */
 void free_neural_network (neural_network_t *neural_network);
 
 void matrix_arr_mul (float *output_arr, float *input_arr, float *matrix, int n_of_output_arr, int n_of_input_arr);
@@ -81,16 +84,38 @@ void compute_weight_grad (float *z_delta, float *previous_activation_arr, float 
 
 void compute_bias_grad (float *input, float *output, int n_of_arr);
 
+/**
+ * ニューラルネットワークの順伝播を計算します。
+ * @param input 入力となるfloat型の配列です。例えば、MNISTデータセットなら784個の数値になります。
+ * @param output 出力を格納するfloat型の配列です。例えば、MNISTデータセットなら10個の数値になります。
+ */
 void forward_pass (neural_network_t *neural_network, float *input, float *output);
 
+/**
+ * ニューラルネットワークの学習前に必要な各パラメータの初期化を行います。
+ */
 void parameter_initialize (neural_network_t *neural_network);
 
+/**
+ * ニューラルネットワークの逆伝播を計算し、勾配を求めます。
+ * @param answer 正解となる配列です。例えば、MNISTデータセットなら正解が1、それ以外が0の配列になります。
+ */
 void backward_pass (neural_network_t *neural_network, float *answer);
 
-void updata_param (neural_network_t *neural_network, float learning_rate);
+/**
+ * ニューラルネットワークのパラメータを更新します。
+ * @param learning_rate モデルの学習率です。高いほど更新幅が大きくなりますが、大きすぎると学習が不安定になる・過学習が起きる・学習が発散するなどの副作用があります。
+ * @param regularization_rate モデルのL2正規化の強さを決める数値です。0.0でオフにできます。高いと過学習が抑えられ新規のデータに対応しやすくなりますが、大きすぎると未学習になることがあります。
+ */
+void update_param (neural_network_t *neural_network, float learning_rate, float regularization_rate);
 
+/**
+ * ニューラルネットワークのパラメータを保存します。
+ */
 void save_neural_network(const neural_network_t *neural_network, const char *filename);
-
+/**
+ * ニューラルネットワークのパラメータを読み込みます。
+ */
 void load_neural_network(neural_network_t *neural_network, const char *filename);
 
 #endif
