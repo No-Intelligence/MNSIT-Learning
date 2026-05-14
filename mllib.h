@@ -76,9 +76,9 @@ void softmax (float *input_arr, float *output_arr, int n_of_arr);
 
 void he_initialize (float *weight, int fan_in, int fan_out);
 
-void compute_output_delta (float *output, float *output_layer, float *answer_arr, int n_of_arr);
+void compute_output_delta (float *output_delta, float *output_layer_activation, float *answer_arr, int n_of_arr);
 
-void compute_hidden_delta (float *z_delta, float *next_weight, float *z, float *output, int n_of_activation, int n_of_z_delta);
+void compute_hidden_delta (float *output_delta, float *current_delta, float *current_weight, float *backward_pre_activation, int n_of_activation, int n_of_z_delta);
 
 void compute_weight_grad (float *z_delta, float *previous_activation_arr, float *output_arr, int n_of_output, int n_of_input);
 
@@ -110,12 +110,12 @@ void backward_pass (neural_network_t *neural_network, float *answer);
 void update_param (neural_network_t *neural_network, float learning_rate, float regularization_rate);
 
 /**
- * ニューラルネットワークのパラメータを保存します。
+ * ニューラルネットワークのパラメータを保存します。成功で0、失敗で-1を返します。
  */
-void save_neural_network(const neural_network_t *neural_network, const char *filename);
+int save_neural_network(const neural_network_t *neural_network, const char *filename);
 /**
- * ニューラルネットワークのパラメータを読み込みます。
+ * ニューラルネットワークのパラメータを読み込みます。成功で0、失敗で-1を返します。
  */
-void load_neural_network(neural_network_t *neural_network, const char *filename);
+int load_neural_network(neural_network_t *neural_network, const char *filename);
 
 #endif
