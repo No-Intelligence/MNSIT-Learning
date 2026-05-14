@@ -1,5 +1,5 @@
-#ifndef MLLIB_H
-#define MLLIB_H
+#ifndef FULLY_CONNECTED_NEURAL_NETWORK_LIBRARY_H
+#define FULLY_CONNECTED_NEURAL_NETWORK_LIBRARY_H
 
 typedef struct {
     float *pre_activation;
@@ -9,6 +9,10 @@ typedef struct {
 typedef struct {
     float *weight;
     float *bias;
+    float *m_weight;  // Adamの1次モーメント（重み）
+    float *v_weight;  // Adamの2次モーメント（重み）
+    float *m_bias;    // Adamの1次モーメント（バイアス）
+    float *v_bias;    // Adamの2次モーメント（バイアス）
 } parameter_t;
 
 typedef enum {
@@ -103,11 +107,23 @@ void parameter_initialize (neural_network_t *neural_network);
 void backward_pass (neural_network_t *neural_network, float *answer);
 
 /**
- * ニューラルネットワークのパラメータを更新します。
- * @param learning_rate モデルの学習率です。高いほど更新幅が大きくなりますが、大きすぎると学習が不安定になる・過学習が起きる・学習が発散するなどの副作用があります。
- * @param regularization_rate モデルのL2正規化の強さを決める数値です。0.0でオフにできます。高いと過学習が抑えられ新規のデータに対応しやすくなりますが、大きすぎると未学習になることがあります。
+ * ニューラルネットワークのパラメータをSGD+L2で更新します。
+ * @param learning_rate モデルの学習率です。
+ * @param regularization_rate L2正規化の強さです。0.0でオフ。
  */
 void update_param (neural_network_t *neural_network, float learning_rate, float regularization_rate);
+
+/**
+ * ニューラルネットワークのパラメータをAdamWで更新します。
+ * @param lr 学習率。一般的に0.001が初期値として使われます。
+ * @param weight_decay Weight decayの強さです。0.0でオフ。AdamWではAdamの外で直接重みに適用されます。
+ * @param beta1 1次モーメントの減衰率。通常0.9。
+ * @param beta2 2次モーメントの減衰率。通常0.999。
+ * @param eps ゼロ除算防止の微小値。通常1e-7。
+ * @param t 現在のステップ数（エポックをまたいでリセットしない）。バイアス補正に使用。
+ */
+void update_param_adam (neural_network_t *neural_network, float lr, float weight_decay,
+                        float beta1, float beta2, float eps, int t);
 
 /**
  * ニューラルネットワークのパラメータを保存します。成功で0、失敗で-1を返します。

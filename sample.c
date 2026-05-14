@@ -5,7 +5,7 @@
 #include <math.h>
 #include <time.h>
 #include <stdint.h>
-#include "mllib.h"
+#include "fcnnlib.h"
 
 int n_layers = 4;
 int layer_size[] = {784, 512, 256, 10};
@@ -58,8 +58,8 @@ int main(int argc, char const *argv[])
 
     float *input_buffer = calloc(60000 * 784, sizeof(float));
     uint8_t *answer_label_buffer = calloc(60000, sizeof(uint8_t));
-    load_MNIST_format_image("train-images-fashion.idx3-ubyte", 60000, input_buffer);
-    load_MNIST_format_label("train-labels-fashion.idx1-ubyte", 60000, answer_label_buffer);
+    load_MNIST_format_image("train-images.idx3-ubyte", 60000, input_buffer);
+    load_MNIST_format_label("train-labels.idx1-ubyte", 60000, answer_label_buffer);
 
     float *input_one_image = calloc(784, sizeof(float));
     float answer_one_label[10];
@@ -78,14 +78,14 @@ int main(int argc, char const *argv[])
 
         forward_pass(nn, input_one_image, output);
         backward_pass(nn, answer_one_label);
-        update_param(nn, learning_rate, regularization_rate);
+        update_param_adam(nn, learning_rate, regularization_rate, 0.9f, 0.999f, 1e-7, i);
         if (i % 3000 == 0) {
             printf("%.1f%%\n", (i / 60000.0f) * 100.0f);
         }
     }
 
-    load_MNIST_format_image("t10k-images-fashion.idx3-ubyte", 10000, input_buffer);
-    load_MNIST_format_label("t10k-labels-fashion.idx1-ubyte", 10000, answer_label_buffer);
+    load_MNIST_format_image("t10k-images.idx3-ubyte", 10000, input_buffer);
+    load_MNIST_format_label("t10k-labels.idx1-ubyte", 10000, answer_label_buffer);
 
 
     for (size_t i = 0; i < 10000; i++)
