@@ -288,36 +288,24 @@ void update_param (neural_network_t *neural_network, float learning_rate, float 
     }
 }
 
-void update_param_adam (neural_network_t *neural_network, float lr, float weight_decay,
-                        float beta1, float beta2, float eps, int t) {
-    // バイアス補正済みの学習率をまとめて計算しておく
+void update_param_adam (neural_network_t *neural_network, float lr, float weight_decay, float beta1, float beta2, float eps, int t) {
     float bc = lr * sqrtf(1.0f - powf(beta2, t)) / (1.0f - powf(beta1, t));
 
     for (size_t i = 0; i < neural_network->n_layers - 1; i++)
     {
-        int n_weights = neural_network->layer_size[i] * neural_network->layer_size[i + 1];
-        int n_biases  = neural_network->layer_size[i + 1];
-
-        // 重みの更新
-        for (int j = 0; j < n_weights; j++)
+        for (size_t j = 0; j < neural_network->layer_size[i] * neural_network->layer_size[i + 1]; j++)
         {
             float g = neural_network->param_grad[i].weight_grad[j];
-            neural_network->parameters[i].m_weight[j] = beta1 * neural_network->parameters[i].m_weight[j] + (1.0f - beta1) * g;
-            neural_network->parameters[i].v_weight[j] = beta2 * neural_network->parameters[i].v_weight[j] + (1.0f - beta2) * g * g;
-            // Adamの更新 + AdamWのweight decay（Adamの外で直接適用）
-            neural_network->parameters[i].weight[j] -= bc * neural_network->parameters[i].m_weight[j]
-                                                        / (sqrtf(neural_network->parameters[i].v_weight[j]) + eps)
-                                                        + lr * weight_decay * neural_network->parameters[i].weight[j];
+            neural_network->parameters[i].m_weight[j] = beta1 * neural_network->parameters[i].m_weight[j] + (1 - beta1) * g;
+            neural_network->parameters[i].v_weight[j] = beta2 * neural_network->parameters[i].v_weight[j] + (1 - beta2) * g * g;
+            neural_network->parameters[i].weight[j] -= lr * neural_network->parameters[i].m_weight[j] / (sqrtf(neural_network->parameters[i].v_weight[j]) + eps) + lr * weight_decay * neural_network->parameters[i].weight[j];
         }
-
-        // バイアスの更新（weight decayは適用しない）
-        for (int j = 0; j < n_biases; j++)
+        for (size_t j = 0; j < neural_network->layer_size[i + 1]; j++)
         {
             float g = neural_network->param_grad[i].bias_grad[j];
-            neural_network->parameters[i].m_bias[j] = beta1 * neural_network->parameters[i].m_bias[j] + (1.0f - beta1) * g;
-            neural_network->parameters[i].v_bias[j] = beta2 * neural_network->parameters[i].v_bias[j] + (1.0f - beta2) * g * g;
-            neural_network->parameters[i].bias[j]  -= bc * neural_network->parameters[i].m_bias[j]
-                                                       / (sqrtf(neural_network->parameters[i].v_bias[j]) + eps);
+            neural_network->parameters[i].m_bias[j] = beta1 * neural_network->parameters[i].m_bias[j] + (1 - beta1) * g;
+            neural_network->parameters[i].v_bias[j] = beta2 * neural_network->parameters[i].v_bias[j] + (1 - beta2) * g * g;
+            neural_network->parameters[i].bias[j] -= lr * neural_network->parameters[i].m_bias[j] / (sqrtf(neural_network->parameters[i].v_bias[j]) + eps);
         }
     }
 }
