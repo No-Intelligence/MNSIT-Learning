@@ -73,6 +73,8 @@ param_grad_t* alloc_param_grad (int n_layers, int *layer_size) {
     {
         p[i].weight_grad = calloc(layer_size[i] * layer_size[i + 1], sizeof(float));
         p[i].bias_grad = calloc(layer_size[i + 1], sizeof(float));
+        p[i].total_weight_grad = calloc(layer_size[i] * layer_size[i + 1], sizeof(float));
+        p[i].total_bias_grad = calloc(layer_size[i + 1], sizeof(float));
     }
     return p;
 }
@@ -82,6 +84,8 @@ void free_param_grad (param_grad_t *param_grad, int n_layers, int *layer_size) {
     {
         free(param_grad[i].weight_grad);
         free(param_grad[i].bias_grad);
+        free(param_grad[i].total_weight_grad);
+        free(param_grad[i].total_bias_grad);
     }
     free(param_grad);
 }
@@ -155,6 +159,20 @@ void relu (float *input_arr, float *output_arr, int n_of_arr) {
 
 }
 
+void leaky_relu (float *input_arr, float *output_arr, int n_of_arr) {
+    for (int i = 0; i < n_of_arr; i++)
+    {
+        if (input_arr[i] > 0) {
+            output_arr[i] = input_arr[i];
+        }
+        else {
+            output_arr[i] = 0.01f * input_arr[i];
+        }
+        
+    }
+
+}
+
 void softmax (float *input_arr, float *output_arr, int n_of_arr) {
     float max = 0.0, sum = 0.0;
     float *tmp = malloc(n_of_arr * sizeof(float));
@@ -188,7 +206,7 @@ void compute_output_delta (float *output_delta, float *output_layer_activation, 
     
 }
 
-void compute_hidden_delta (float *output_delta, float *current_delta, float *current_weight, float *backward_pre_activation, int n_of_activation, int n_of_z_delta) {
+void compute_hidden_delta (float *output_delta, float *current_delta, float *current_weight, float *backward_pre_activation, int n_of_activation, int n_of_z_delta, activation_t activation) {
     memset(output_delta, 0, n_of_activation * sizeof(float));
     for (size_t i = 0; i < n_of_activation; i++)
     {
@@ -201,13 +219,24 @@ void compute_hidden_delta (float *output_delta, float *current_delta, float *cur
 
     for (size_t i = 0; i < n_of_activation; i++)
     {
-        if (backward_pre_activation[i] <= 0)
+        switch (activation)
         {
-            output_delta[i] = 0.0f;
+        case ACTIVATION_RELU:
+            if (backward_pre_activation[i] <= 0)
+            {
+                output_delta[i] = 0.0f;
+            }
+            break;
+    
+        case ACTIVATION_LEAKY_RELU:
+            if (backward_pre_activation[i] <= 0)
+            {
+                output_delta[i] *= 0.01f;
+            }
+            break;
         }
         
     }
-    
     
 }
 
@@ -239,6 +268,10 @@ void forward_pass (neural_network_t *neural_network, float *input, float *output
             relu(neural_network->layers[i + 1].pre_activation, neural_network->layers[i + 1].activation, neural_network->layer_size[i + 1]);
             break;
         
+        case ACTIVATION_LEAKY_RELU:
+            leaky_relu(neural_network->layers[i + 1].pre_activation, neural_network->layers[i + 1].activation, neural_network->layer_size[i + 1]);
+            break;
+
         case ACTIVATION_SOFTMAX:
             softmax(neural_network->layers[i + 1].pre_activation, neural_network->layers[i + 1].activation, neural_network->layer_size[i + 1]);
             break;
@@ -267,47 +300,98 @@ void backward_pass (neural_network_t *neural_network, float *answer){
 
     for (size_t i = L - 1; i >= 1; i--)
     {
-        compute_hidden_delta(neural_network->layer_grad[i - 1].delta, neural_network->layer_grad[i].delta, neural_network->parameters[i].weight, neural_network->layers[i].pre_activation, neural_network->layer_size[i], neural_network->layer_size[i + 1]);
+        compute_hidden_delta(neural_network->layer_grad[i - 1].delta, neural_network->layer_grad[i].delta, neural_network->parameters[i].weight, neural_network->layers[i].pre_activation, neural_network->layer_size[i], neural_network->layer_size[i + 1], neural_network->activations[i - 1]);
         compute_weight_grad(neural_network->layer_grad[i - 1].delta, neural_network->layers[i - 1].activation, neural_network->param_grad[i - 1].weight_grad, neural_network->layer_size[i], neural_network->layer_size[i - 1]);
         compute_bias_grad(neural_network->param_grad[i - 1].bias_grad, neural_network->layer_grad[i - 1].delta, neural_network->layer_size[i]);
     }
 
+    for (size_t i = 0; i < L; i++)
+    {
+        for (size_t j = 0; j < neural_network->layer_size[i] * neural_network->layer_size[i + 1]; j++)
+        {
+            neural_network->param_grad[i].total_weight_grad[j] += neural_network->param_grad[i].weight_grad[j];
+        }
+        for (size_t j = 0; j < neural_network->layer_size[i + 1]; j++)
+        {
+            neural_network->param_grad[i].total_bias_grad[j] += neural_network->param_grad[i].bias_grad[j];
+        }
+        
+    }
+    
 }
 
-void update_param (neural_network_t *neural_network, float learning_rate, float regularization_rate) {
+void update_param (neural_network_t *neural_network, float learning_rate, float regularization_rate, int batch_size) {
+    int L = neural_network->n_layers - 1;
+    for (size_t i = 0; i < L; i++)
+    {
+        for (size_t j = 0; j < neural_network->layer_size[i] * neural_network->layer_size[i + 1]; j++)
+        {
+            neural_network->param_grad[i].total_weight_grad[j] /= batch_size;
+        }
+        for (size_t j = 0; j < neural_network->layer_size[i + 1]; j++)
+        {
+            neural_network->param_grad[i].total_bias_grad[j] /= batch_size;
+        }
+        
+    }
+
     for (size_t i = 0; i < neural_network->n_layers - 1; i++)
     {
         for (size_t j = 0; j < neural_network->layer_size[i] * neural_network->layer_size[i + 1]; j++)
         {
-            neural_network->parameters[i].weight[j] -= learning_rate * (neural_network->param_grad[i].weight_grad[j] + regularization_rate * neural_network->parameters[i].weight[j]);
+            neural_network->parameters[i].weight[j] -= learning_rate * (neural_network->param_grad[i].total_weight_grad[j] + regularization_rate * neural_network->parameters[i].weight[j]);
         }
         for (size_t j = 0; j < neural_network->layer_size[i + 1]; j++)
         {
-            neural_network->parameters[i].bias[j] -= learning_rate * neural_network->param_grad[i].bias_grad[j];
+            neural_network->parameters[i].bias[j] -= learning_rate * neural_network->param_grad[i].total_bias_grad[j];
         }
     }
 }
 
-void update_param_adam (neural_network_t *neural_network, float lr, float weight_decay, float beta1, float beta2, float eps, int t) {
+void update_param_adam (neural_network_t *neural_network, float lr, float weight_decay, float beta1, float beta2, float eps, int t, int batch_size) {
+    int L = neural_network->n_layers - 1;
+    for (size_t i = 0; i < L; i++)
+    {
+        for (size_t j = 0; j < neural_network->layer_size[i] * neural_network->layer_size[i + 1]; j++)
+        {
+            neural_network->param_grad[i].total_weight_grad[j] /= batch_size;
+        }
+        for (size_t j = 0; j < neural_network->layer_size[i + 1]; j++)
+        {
+            neural_network->param_grad[i].total_bias_grad[j] /= batch_size;
+        }
+        
+    }
+    
     float bc = lr * sqrtf(1.0f - powf(beta2, t)) / (1.0f - powf(beta1, t));
 
     for (size_t i = 0; i < neural_network->n_layers - 1; i++)
     {
         for (size_t j = 0; j < neural_network->layer_size[i] * neural_network->layer_size[i + 1]; j++)
         {
-            float g = neural_network->param_grad[i].weight_grad[j];
+            float g = neural_network->param_grad[i].total_weight_grad[j];
             neural_network->parameters[i].m_weight[j] = beta1 * neural_network->parameters[i].m_weight[j] + (1 - beta1) * g;
             neural_network->parameters[i].v_weight[j] = beta2 * neural_network->parameters[i].v_weight[j] + (1 - beta2) * g * g;
-            neural_network->parameters[i].weight[j] -= lr * neural_network->parameters[i].m_weight[j] / (sqrtf(neural_network->parameters[i].v_weight[j]) + eps) + lr * weight_decay * neural_network->parameters[i].weight[j];
+            neural_network->parameters[i].weight[j] -= bc * neural_network->parameters[i].m_weight[j] / (sqrtf(neural_network->parameters[i].v_weight[j]) + eps) + lr * weight_decay * neural_network->parameters[i].weight[j];
         }
         for (size_t j = 0; j < neural_network->layer_size[i + 1]; j++)
         {
-            float g = neural_network->param_grad[i].bias_grad[j];
+            float g = neural_network->param_grad[i].total_bias_grad[j];
             neural_network->parameters[i].m_bias[j] = beta1 * neural_network->parameters[i].m_bias[j] + (1 - beta1) * g;
             neural_network->parameters[i].v_bias[j] = beta2 * neural_network->parameters[i].v_bias[j] + (1 - beta2) * g * g;
-            neural_network->parameters[i].bias[j] -= lr * neural_network->parameters[i].m_bias[j] / (sqrtf(neural_network->parameters[i].v_bias[j]) + eps);
+            neural_network->parameters[i].bias[j] -= bc * neural_network->parameters[i].m_bias[j] / (sqrtf(neural_network->parameters[i].v_bias[j]) + eps);
         }
     }
+}
+
+void flush_grad (neural_network_t *neural_network) {
+    for (size_t i = 0; i < neural_network->n_layers - 1; i++)
+    {
+        memset(neural_network->param_grad[i].total_weight_grad, 0, neural_network->layer_size[i] * neural_network->layer_size[i + 1] * sizeof(float));
+        memset(neural_network->param_grad[i].total_bias_grad, 0, neural_network->layer_size[i + 1] * sizeof(float));
+        
+    }
+
 }
 
 //  ↓Generated by DeepSeek V4 Pro

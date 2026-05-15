@@ -17,6 +17,7 @@ typedef struct {
 
 typedef enum {
     ACTIVATION_RELU,
+    ACTIVATION_LEAKY_RELU,
     ACTIVATION_SOFTMAX
 } activation_t;
 
@@ -27,6 +28,8 @@ typedef struct {
 typedef struct {
     float *weight_grad;
     float *bias_grad;
+    float *total_weight_grad;
+    float *total_bias_grad;
 } param_grad_t;
 
 typedef struct {
@@ -76,13 +79,15 @@ float extract_max (float *input_array, int n_of_input_arr);
 
 void relu (float *input_arr, float *output_arr, int n_of_arr);
 
+void leaky_relu (float *input_arr, float *output_arr, int n_of_arr);
+
 void softmax (float *input_arr, float *output_arr, int n_of_arr);
 
 void he_initialize (float *weight, int fan_in, int fan_out);
 
 void compute_output_delta (float *output_delta, float *output_layer_activation, float *answer_arr, int n_of_arr);
 
-void compute_hidden_delta (float *output_delta, float *current_delta, float *current_weight, float *backward_pre_activation, int n_of_activation, int n_of_z_delta);
+void compute_hidden_delta (float *output_delta, float *current_delta, float *current_weight, float *backward_pre_activation, int n_of_activation, int n_of_z_delta, activation_t activation);
 
 void compute_weight_grad (float *z_delta, float *previous_activation_arr, float *output_arr, int n_of_output, int n_of_input);
 
@@ -111,7 +116,7 @@ void backward_pass (neural_network_t *neural_network, float *answer);
  * @param learning_rate モデルの学習率です。
  * @param regularization_rate L2正規化の強さです。0.0でオフ。
  */
-void update_param (neural_network_t *neural_network, float learning_rate, float regularization_rate);
+void update_param (neural_network_t *neural_network, float learning_rate, float regularization_rate, int batch_size);
 
 /**
  * ニューラルネットワークのパラメータをAdamWで更新します。
@@ -123,7 +128,9 @@ void update_param (neural_network_t *neural_network, float learning_rate, float 
  * @param t 現在のステップ数（エポックをまたいでリセットしない）。バイアス補正に使用。
  */
 void update_param_adam (neural_network_t *neural_network, float lr, float weight_decay,
-                        float beta1, float beta2, float eps, int t);
+                        float beta1, float beta2, float eps, int t, int batch_size);
+
+void flush_grad (neural_network_t *neural_network);
 
 /**
  * ニューラルネットワークのパラメータを保存します。成功で0、失敗で-1を返します。
