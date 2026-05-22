@@ -79,7 +79,7 @@ neural_network_t* alloc_neural_network (void);
 
 void add_fc_layer (neural_network_t *nn, int in_size, int out_size);
 
-void add_conv_layer (neural_network_t *nn, int in_height, int in_width, int in_channel, int filter_height, int filter_width, int n_filers, int filter_stride, int n_padding);
+void add_conv_layer (neural_network_t *nn, int in_height, int in_width, int in_channel, int filter_height, int filter_width, int n_filters, int filter_stride, int n_padding);
 
 void add_pool_layer (neural_network_t *nn, int in_height, int in_width, int in_channel, int kernel_height, int kernel_width);
 
@@ -102,6 +102,8 @@ float extract_max (float *input_array, int n_of_input_arr);
 void softmax (float *input_arr, float *output_arr, int n_of_arr);
 
 void forward_convolution (float *input, float *filter, float *output, int n_input_height, int n_input_width, int n_input_channel, int filter_height, int filter_width, int n_filters, int stride, float *bias);
+
+void forward_maxpool(float *input, float *output, int n_channels, int in_height, int in_width, int kernel_height, int kernel_width, uint8_t *mask);
 
 void forward_pass (neural_network_t *nn, float *input);
 
