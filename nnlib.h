@@ -60,7 +60,7 @@ typedef struct {
 
 typedef struct {
     layer_type_t type;
-    float output_size;
+    int output_size;
     union {
         fc_layer_t fc;
         conv_layer_t conv;
@@ -106,5 +106,11 @@ void forward_convolution (float *input, float *filter, float *output, int n_inpu
 void forward_maxpool(float *input, float *output, int n_channels, int in_height, int in_width, int kernel_height, int kernel_width, uint8_t *mask);
 
 void forward_pass (neural_network_t *nn, float *input);
+
+void compute_output_softmax_delta (float *output_delta, float *output_layer_activation, float *answer_arr, int n_of_arr);
+
+void compute_backward_fc (float *output_delta, float *current_delta, float *weight, float *backward_pre_activation, int n_of_activation, int n_of_z_delta);
+
+void backward_pass (neural_network_t *nn, float *answer);
 
 #endif

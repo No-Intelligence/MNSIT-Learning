@@ -16,6 +16,7 @@ void add_fc_layer (neural_network_t *nn, int in_size, int out_size) {
     nn->layers = realloc(nn->layers, nn->n_layers * sizeof(layer_t));
     nn->layers[nn->n_layers - 1].type = LAYER_FC;
     nn->layers[nn->n_layers - 1].output_size = out_size;
+    nn->layers[nn->n_layers - 1].delta = calloc(out_size, sizeof(float));
     nn->layers[nn->n_layers - 1].output = calloc(out_size, sizeof(float));
 
     nn->layers[nn->n_layers - 1].data.fc.in_size = in_size;
@@ -40,6 +41,7 @@ void add_conv_layer (neural_network_t *nn, int in_height, int in_width, int in_c
     nn->layers = realloc(nn->layers, nn->n_layers * sizeof(layer_t));
     nn->layers[nn->n_layers - 1].type = LAYER_CONV;
     nn->layers[nn->n_layers - 1].output_size = n_filters * out_height * out_width;
+    nn->layers[nn->n_layers - 1].delta = calloc(n_filters * out_height * out_width, sizeof(float));
     nn->layers[nn->n_layers - 1].output = calloc(n_filters * out_height * out_width, sizeof(float));
 
     nn->layers[nn->n_layers - 1].data.conv.in_height = in_height;
@@ -70,6 +72,7 @@ void add_pool_layer (neural_network_t *nn, int in_height, int in_width, int in_c
     nn->layers = realloc(nn->layers, nn->n_layers * sizeof(layer_t));
     nn->layers[nn->n_layers - 1].type = LAYER_POOL;
     nn->layers[nn->n_layers - 1].output_size = in_channel * out_height * out_width;
+    nn->layers[nn->n_layers - 1].delta = calloc(in_channel * out_height * out_width, sizeof(float));
     nn->layers[nn->n_layers - 1].output = calloc(in_channel * out_height * out_width, sizeof(float));
 
     nn->layers[nn->n_layers - 1].data.pool.in_height = in_height;
@@ -86,6 +89,7 @@ void add_activation_layer (neural_network_t *nn, layer_type_t activation) {
     nn->layers = realloc(nn->layers, nn->n_layers * sizeof(layer_t));
     nn->layers[nn->n_layers - 1].type = activation;
     nn->layers[nn->n_layers - 1].output_size = nn->layers[nn->n_layers - 2].output_size;
+    nn->layers[nn->n_layers - 1].delta = calloc(nn->layers[nn->n_layers - 2].output_size, sizeof(float));
     nn->layers[nn->n_layers - 1].output = calloc(nn->layers[nn->n_layers - 2].output_size, sizeof(float));
 }
 
@@ -95,6 +99,7 @@ void add_flatten_layer (neural_network_t *nn) {
     nn->layers = realloc(nn->layers, nn->n_layers * sizeof(layer_t));
     nn->layers[nn->n_layers - 1].type = LAYER_FLATTEN;
     nn->layers[nn->n_layers - 1].output_size = nn->layers[nn->n_layers - 2].output_size;
+    nn->layers[nn->n_layers - 1].delta = calloc(nn->layers[nn->n_layers - 2].output_size, sizeof(float));
     nn->layers[nn->n_layers - 1].output = calloc(nn->layers[nn->n_layers - 2].output_size, sizeof(float));
 }
 
@@ -105,6 +110,7 @@ void free_neural_network (neural_network_t *nn) {
         {
         case LAYER_FC:
             free(nn->layers[i].output);
+            free(nn->layers[i].delta);
             free(nn->layers[i].data.fc.bias);
             free(nn->layers[i].data.fc.grad_bias);
             free(nn->layers[i].data.fc.grad_weight);
@@ -119,6 +125,7 @@ void free_neural_network (neural_network_t *nn) {
 
         case LAYER_CONV:
             free(nn->layers[i].output);
+            free(nn->layers[i].delta);
             free(nn->layers[i].data.conv.filter);
             free(nn->layers[i].data.conv.bias);
             free(nn->layers[i].data.conv.m_filter);
@@ -133,23 +140,28 @@ void free_neural_network (neural_network_t *nn) {
 
         case LAYER_POOL:
             free(nn->layers[i].output);
+            free(nn->layers[i].delta);
             free(nn->layers[i].data.pool.mask);
             break;
 
         case LAYER_RELU:
             free(nn->layers[i].output);
+            free(nn->layers[i].delta);
             break;
 
         case LAYER_LEAKY_RELU:
             free(nn->layers[i].output);
+            free(nn->layers[i].delta);
             break;
 
         case LAYER_SOFTMAX:
             free(nn->layers[i].output);
+            free(nn->layers[i].delta);
             break;
 
         case LAYER_FLATTEN:
             free(nn->layers[i].output);
+            free(nn->layers[i].delta);
             break;
         }
     }
@@ -344,6 +356,75 @@ void forward_pass (neural_network_t *nn, float *input) {
             break;
         }
         current_input = nn->layers[i].output;
+    }
+    
+}
+
+void compute_output_softmax_delta (float *output_delta, float *output_layer_activation, float *answer_arr, int n_of_arr) {
+    for (size_t i = 0; i < n_of_arr; i++)
+    {
+        output_delta[i] = output_layer_activation[i] - answer_arr[i];
+    }
+    
+}
+
+void compute_backward_fc (float *output_delta, float *current_delta, float *weight, float *backward_pre_activation, int n_of_activation, int n_of_z_delta) {
+    memset(output_delta, 0, n_of_activation * sizeof(float));
+    for (size_t i = 0; i < n_of_activation; i++)
+    {
+        for (size_t j = 0; j < n_of_z_delta; j++)
+        {
+            output_delta[i] += current_delta[j] * current_weight[j * n_of_activation+ i];
+        }
+        
+    }
+}
+
+void backward_pass (neural_network_t *nn, float *answer) {
+    float *current_delta;
+    switch (nn->layers[nn->n_layers - 1].type)
+    {
+    case LAYER_SOFTMAX:
+        compute_output_softmax_delta(nn->layers[nn->n_layers - 1].delta, nn->layers[nn->n_layers - 1].output, answer, nn->layers[nn->n_layers - 1].output_size);
+        break;
+    }
+    current_delta = nn->layers[nn->n_layers - 1].delta;
+
+    for (int i = (nn->n_layers - 2); i >= 0; i--)
+    {
+        switch (nn->layers[i].type)
+        {
+        case LAYER_FC:
+            break;
+
+        case LAYER_CONV:
+            break;
+
+        case LAYER_POOL:
+            break;
+
+        case LAYER_RELU:
+            for (size_t j = 0; j < nn->layers[i].output_size; j++)
+            {
+                nn->layers[i].delta[j] = current_delta[j] * (nn->layers[i - 1].output[j] > 0);
+            }
+            break;
+
+        case LAYER_LEAKY_RELU:
+            for (size_t j = 0; j < nn->layers[i].output_size; j++)
+            {
+                nn->layers[i].delta[j] = current_delta[j] * (nn->layers[i - 1].output[j] > 0) + 0.01 * current_delta[j] * (nn->layers[i - 1].output[j] <= 0);
+            }
+            break;
+
+        case LAYER_SOFTMAX:
+            break;
+
+        case LAYER_FLATTEN:
+            memcpy(nn->layers[i].delta, current_delta, nn->layers[i].output_size * sizeof(float));
+            break;
+        }
+        current_delta = nn->layers[i].delta;
     }
     
 }
