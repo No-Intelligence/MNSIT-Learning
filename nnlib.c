@@ -370,9 +370,9 @@ void compute_output_softmax_delta (float *output_delta, float *output_layer_acti
 
 void compute_backward_fc (float *output_delta, float *current_delta, float *weight, int n_output_delta, int n_current_delta) {
     memset(output_delta, 0, n_output_delta * sizeof(float));
-    for (size_t i = 0; i < n_output_delta; i++)
+    for (size_t j = 0; j < n_current_delta; j++)
     {
-        for (size_t j = 0; j < n_current_delta; j++)
+        for (size_t i = 0; i < n_output_delta; i++)
         {
             output_delta[i] += current_delta[j] * weight[j * n_output_delta+ i];
         }
@@ -470,7 +470,7 @@ void compute_backward_conv (float *computed_delta, float *grad_filter, float *gr
 
 
 
-void backward_pass (neural_network_t *nn, float *answer) {
+void backward_pass (neural_network_t *nn, float *input, float *answer) {
     float *current_delta;
     switch (nn->layers[nn->n_layers - 1].type)
     {
@@ -485,7 +485,14 @@ void backward_pass (neural_network_t *nn, float *answer) {
         switch (nn->layers[i].type)
         {
         case LAYER_FC:
-            compute_weight_grad(current_delta, nn->layers[i - 1].output, nn->layers[i].data.fc.grad_weight, nn->layers[i].output_size, nn->layers[i - 1].output_size);
+            if (i == 0)
+            {
+                compute_weight_grad(current_delta, input, nn->layers[i].data.fc.grad_weight, nn->layers[i].output_size, nn->layers[i].data.fc.in_size);
+            }
+            else
+            {
+                compute_weight_grad(current_delta, nn->layers[i - 1].output, nn->layers[i].data.fc.grad_weight, nn->layers[i].output_size, nn->layers[i - 1].output_size);
+            }
             compute_bias_grad(nn->layers[i].data.fc.grad_bias, current_delta, nn->layers[i].output_size);
             if (i > 0)
             {
