@@ -51,19 +51,25 @@ int main(int argc, char const *argv[])
 {
     srand(time(NULL));
     neural_network_t *nn = alloc_neural_network();
-
-    add_fc_layer(nn, 784, 256);
+    add_conv_layer(nn, 28, 28, 1, 3, 3, 32, 1, 0);  // 26x26x32
     add_activation_layer(nn, LAYER_RELU);
-    add_fc_layer(nn, 256, 128);
+    add_pool_layer(nn, 26, 26, 32, 2, 2);           // 13x13x32
+    add_conv_layer(nn, 13, 13, 32, 3, 3, 64, 1, 0); // 11x11x64
+    add_activation_layer(nn, LAYER_RELU);
+    add_pool_layer(nn, 11, 11, 64, 2, 2);
+    add_flatten_layer(nn);
+    add_fc_layer(nn, 5*5*64, 128);
     add_activation_layer(nn, LAYER_RELU);
     add_fc_layer(nn, 128, 10);
     add_activation_layer(nn, LAYER_SOFTMAX);
+    
     parameter_initialize(nn);
 
     float *input_buffer = calloc(60000 * 784, sizeof(float));
     uint8_t *answer_label_buffer = calloc(60000, sizeof(uint8_t));
     load_MNIST_format_image("train-images-fashion.idx3-ubyte", 60000, input_buffer);
     load_MNIST_format_label("train-labels-fashion.idx1-ubyte", 60000, answer_label_buffer);
+    printf("train data loaded\n");
 
     float *input_one_image = calloc(784, sizeof(float));
     float answer_one_label[10];
@@ -73,6 +79,7 @@ int main(int argc, char const *argv[])
     int hit = 0;
     int t = 0;
 
+    printf("training start\n");
     for (int x = 0; x < 1; x++){
         for (size_t i = 0; i < 60000; i++)
         {
@@ -84,8 +91,12 @@ int main(int argc, char const *argv[])
 
             forward_pass(nn, input_one_image);
             backward_pass(nn, input_one_image, answer_one_label);
-            t++;
-            update_param_adam(nn, learning_rate, regularization_rate, 0.9f, 0.999f, 1e-7, t, 1);
+            if ((i%32) == 31)
+            {
+                t++;
+                update_param_adam(nn, learning_rate, regularization_rate, 0.9f, 0.999f, 1e-7, t, 32);
+            }
+            
             if (i % 3000 == 0) {
                 printf("%.1f%%\n", (i / 60000.0f) * 100.0f);
             }
@@ -94,7 +105,6 @@ int main(int argc, char const *argv[])
 
     load_MNIST_format_image("t10k-images-fashion.idx3-ubyte", 10000, input_buffer);
     load_MNIST_format_label("t10k-labels-fashion.idx1-ubyte", 10000, answer_label_buffer);
-
 
     for (size_t i = 0; i < 10000; i++)
     {
