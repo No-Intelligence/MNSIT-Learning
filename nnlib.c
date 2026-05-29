@@ -95,7 +95,7 @@ void add_conv_layer (neural_network_t *nn, int in_height, int in_width, int in_c
     nn->layers = realloc(nn->layers, nn->n_layers * sizeof(layer_t));
     nn->layers[nn->n_layers - 1].type = LAYER_CONV;
     nn->layers[nn->n_layers - 1].output_size = n_filters * out_height * out_width;
-    nn->layers[nn->n_layers - 1].delta = calloc(n_filters * in_height * in_width, sizeof(float));
+    nn->layers[nn->n_layers - 1].delta = calloc(in_channel * in_height * in_width, sizeof(float));
     nn->layers[nn->n_layers - 1].output = calloc(n_filters * out_height * out_width, sizeof(float));
 
     nn->layers[nn->n_layers - 1].data.conv.in_height = in_height;
